@@ -139,9 +139,8 @@ class DementiaChatbot:
             # Load base model
             base_model = AutoModelForCausalLM.from_pretrained(
                 self.base_model_name,
-                torch_dtype=torch.float16,
+                torch_dtype=torch.float16 if self.device in ["cuda", "mps"] else torch.float32,
                 device_map="auto" if self.device == "cuda" else None,
-                low_cpu_mem_usage=True,
                 trust_remote_code=True,
                 token=hf_token  # Use token for private models
             )
