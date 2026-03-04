@@ -5,6 +5,7 @@ Handles connection to MongoDB Atlas cluster
 
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import ConnectionFailure
+import asyncio
 import logging
 import os
 from typing import Optional
@@ -43,8 +44,8 @@ class Database:
                 connectTimeoutMS=10000
             )
 
-            # Test the connection
-            await cls.client.admin.command('ping')
+            # Test the connection (timeout guards against asyncio.CancelledError on slow Atlas)
+            await asyncio.wait_for(cls.client.admin.command('ping'), timeout=15)
 
             # Get database
             cls.db = cls.client[db_name]
@@ -54,6 +55,14 @@ class Database:
 
             return True
 
+        except asyncio.CancelledError:
+            logger.error("MongoDB ping was cancelled (server startup interrupted)")
+            print("❌ ERROR: MongoDB connection ping was cancelled")
+            raise
+        except asyncio.TimeoutError:
+            logger.error("MongoDB connection timed out after 15 seconds")
+            print("❌ FAILED: MongoDB connection timed out")
+            raise ConnectionFailure("MongoDB ping timed out")
         except ConnectionFailure as e:
             logger.error(f"Failed to connect to MongoDB: {e}")
             print(f"❌ FAILED: Could not connect to MongoDB: {e}")
@@ -137,6 +146,20 @@ class Database:
             alerts = cls.get_collection("caregiver_alerts")
             await alerts.create_index("caregiver_id")
             await alerts.create_index("created_at")
+
+            # Behavioral analysis indexes (Chronos dementia risk)
+            behavioral_logs = cls.get_collection("behavioral_logs")
+            await behavioral_logs.create_index("user_id")
+            await behavioral_logs.create_index("timestamp")
+            await behavioral_logs.create_index([("user_id", 1), ("timestamp", -1)])
+            await behavioral_logs.create_index("activity_type")
+
+            daily_summaries = cls.get_collection("behavioral_daily_summary")
+            await daily_summaries.create_index([("user_id", 1), ("date", -1)])
+
+            risk_reports = cls.get_collection("dementia_risk_reports")
+            await risk_reports.create_index("user_id")
+            await risk_reports.create_index([("user_id", 1), ("generated_at", -1)])
 
             # Chat detection session indexes (12-parameter system)
             chat_detection_sessions = cls.get_collection("chat_detection_sessions")

@@ -37,6 +37,7 @@ from src.models.conversational_ai.model_utils import DementiaPredictor
 # from src.preprocessing.voice_processor import get_voice_processor
 # from src.preprocessing.audio_models import get_db_manager
 from src.routes import healthcheck, conversational_ai, reminder_routes, game_routes, risk_routes, websocket_routes, caregiver_routes, user_routes, detection_routes
+from src.routes import behavioral_routes
 
 from src.database import Database
 from src.services.chatbot import session_finalizer
@@ -98,6 +99,9 @@ app.include_router(caregiver_routes.router)
 
 # User/Patient authentication routes
 app.include_router(user_routes.router)
+
+# Behavioral analysis + Chronos dementia risk routes
+app.include_router(behavioral_routes.router)
 
 # Initialize components
 feature_extractor = FeatureExtractor()
@@ -736,7 +740,9 @@ async def startup_event():
         # Create indexes for better performance
         await Database.create_indexes()
         logger.info("[SUCCESS] MongoDB connected (conversational AI collections)")
-    except Exception as e:
+    except BaseException as e:
+        # Catch BaseException so asyncio.CancelledError (inherits BaseException, not Exception
+        # in Python 3.8+) does not propagate and kill the entire server startup.
         logger.error(f"MongoDB connection failed: {e}")
         logger.warning("API will continue without database connection")
 
