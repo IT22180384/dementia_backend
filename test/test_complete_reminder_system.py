@@ -44,8 +44,8 @@ logging.basicConfig(
 logger = logging.getLogger('comprehensive_test')
 
 # Test configuration
-BASE_URL = "http://localhost:8000"
-WS_URL = "ws://localhost:8000"
+BASE_URL = "http://localhost:8080"
+WS_URL = "ws://localhost:8080"
 TEST_USER_ID = "test_patient_001"
 TEST_CAREGIVER_ID = "test_caregiver_001"
 

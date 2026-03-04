@@ -9,7 +9,7 @@ import requests
 import json
 from datetime import datetime, timedelta
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:8080"
 
 def print_test(name, passed, response=None):
     """Print test result."""

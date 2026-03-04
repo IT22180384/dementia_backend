@@ -8,7 +8,7 @@ import requests
 import json
 from datetime import datetime, timedelta
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:8080"
 
 def test_api_endpoints():
     """Test all reminder system API endpoints."""
@@ -109,7 +109,7 @@ def test_api_endpoints():
         
     except requests.exceptions.ConnectionError:
         print("\n❌ ERROR: Cannot connect to API server")
-        print("   Make sure the API is running: python -m uvicorn src.api.app_simple:app --reload --port 8000")
+        print("   Make sure the API is running: python -m uvicorn src.api.app_simple:app --reload --port 8080")
     except Exception as e:
         print(f"\n❌ ERROR: {e}")
 

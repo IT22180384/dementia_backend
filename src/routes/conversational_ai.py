@@ -232,7 +232,7 @@ async def process_voice_chat(
 
     **Example:**
     ```bash
-    curl -X POST "http://localhost:8000/chat/voice" \\
+    curl -X POST "http://localhost:8080/chat/voice" \\
       -F "user_id=user_001" \\
       -F "file=@my_audio.wav"
     ```

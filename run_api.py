@@ -8,9 +8,9 @@ Usage:
     python run_api.py
 
 Then access:
-    - API docs: http://localhost:8000/docs
-    - Health: http://localhost:8000/health
-    - Predictions: http://localhost:8000/predict
+    - API docs: http://localhost:8080/docs
+    - Health: http://localhost:8080/health
+    - Predictions: http://localhost:8080/predict
 """
 
 import uvicorn
@@ -32,18 +32,18 @@ def main():
     print("\n" + "="*80)
     print("Dementia Care Chatbot API Server")
     print("="*80)
-    print("\n📚 API Documentation:")
-    print("  • Swagger UI: http://localhost:8000/docs")
-    print("  • ReDoc:      http://localhost:8000/redoc")
+    print("\nAPI Documentation:")
+    print("  • Swagger UI: http://localhost:8080/docs")
+    print("  • ReDoc:      http://localhost:8080/redoc")
     print("\nChatbot Endpoints:")
-    print("  • Text Chat:       POST http://localhost:8000/chat/text")
-    print("  • Voice Chat:      POST http://localhost:8000/chat/voice")
-    print("  • Health Check:    GET  http://localhost:8000/chat/health")
-    print("  • Session History: GET  http://localhost:8000/chat/sessions/{id}")
-    print("  • Clear Session:   DEL  http://localhost:8000/chat/sessions/{id}")
+    print("  • Text Chat:       POST http://localhost:8080/chat/text")
+    print("  • Voice Chat:      POST http://localhost:8080/chat/voice")
+    print("  • Health Check:    GET  http://localhost:8080/chat/health")
+    print("  • Session History: GET  http://localhost:8080/chat/sessions/{id}")
+    print("  • Clear Session:   DEL  http://localhost:8080/chat/sessions/{id}")
     print("\nOther Endpoints:")
-    print("  • Health Check:  http://localhost:8000/health")
-    print("  • Predictions:   http://localhost:8000/predict")
+    print("  • Health Check:  http://localhost:8080/health")
+    print("  • Predictions:   http://localhost:8080/predict")
     print("\nModel Information:")
     print("  • Base Model: LLaMA 3.2 1B Instruct")
     print("  • Training:   DailyDialog dataset")
@@ -57,8 +57,7 @@ def main():
         uvicorn.run(
             "src.api.app:app",
             host="0.0.0.0",
-            port=8000,
-            reload=True,
+            port=8080,
             log_level="info"
         )
     except KeyboardInterrupt:

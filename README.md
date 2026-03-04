@@ -119,11 +119,11 @@ pip install -r requirements.txt
 python run_api.py
 ```
 
-The API will be available at: `http://localhost:8000`
+The API will be available at: `http://localhost:8080`
 
 ### 3. View API Documentation
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
+- **Swagger UI**: http://localhost:8080/docs
+- **ReDoc**: http://localhost:8080/redoc
 
 ## Current API Endpoints
 

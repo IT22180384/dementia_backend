@@ -20,8 +20,8 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('realtime_test')
 
-BASE_URL = "http://localhost:8000"
-WS_URL = "ws://localhost:8000"
+BASE_URL = "http://localhost:8080"
+WS_URL = "ws://localhost:8080"
 
 class RealTimeTestClient:
     """Test client for the real-time reminder system."""
@@ -92,7 +92,7 @@ class RealTimeTestClient:
                 logger.info("Proceeding with test anyway...")
         
         except requests.exceptions.ConnectionError:
-            logger.warning("⚠️ Cannot connect to API server - ensure it's running on localhost:8000")
+            logger.warning("⚠️ Cannot connect to API server - ensure it's running on localhost:8080")
             logger.info("Proceeding with WebSocket tests...")
         except Exception as e:
             logger.warning(f"⚠️ Error creating reminder: {e}")
@@ -319,7 +319,7 @@ This test demonstrates:
 
 Prerequisites:
 1. Start the API server: python src/api/app_simple.py
-2. Server should be running on localhost:8000
+2. Server should be running on localhost:8080
     """)
     
     client = RealTimeTestClient()

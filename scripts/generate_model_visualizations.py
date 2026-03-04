@@ -478,7 +478,7 @@ def main():
     print("\n" + "="*60)
     print("✓ ALL VISUALIZATIONS GENERATED SUCCESSFULLY!")
     print("="*60)
-    print(f"\nView your dashboard at: http://localhost:8000/dashboard/")
+    print(f"\nView your dashboard at: http://localhost:8080/dashboard/")
     print(f"Visualizations saved to: {VISUALIZATIONS_DIR}")
 
 
