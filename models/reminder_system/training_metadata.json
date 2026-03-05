@@ -1,251 +1,352 @@
 {
-  "training_date": "2025-12-15T08:44:13.732017",
-  "data_file": "data\\synthetic_reminder_data.csv",
-  "data_shape": [
-    2000,
-    59
+  "training_date": "2026-03-05T16:41:19.535790",
+  "dataset": "Pitt Corpus (DementiaBank)",
+  "synthetic_data_used": false,
+  "total_samples": 1289,
+  "control_samples": 247,
+  "dementia_samples": 1042,
+  "train_samples": 1031,
+  "test_samples": 258,
+  "feature_columns": [
+    "word_count",
+    "sentence_count",
+    "avg_words_per_sentence",
+    "avg_word_length",
+    "unique_word_ratio",
+    "hesitation_count",
+    "false_starts",
+    "self_corrections",
+    "uncertainty_markers",
+    "semantic_incoherence",
+    "word_finding_difficulty",
+    "circumlocution",
+    "tangentiality",
+    "narrative_coherence",
+    "response_coherence",
+    "task_completion_score",
+    "language_deterioration_score"
   ],
-  "feature_groups": {
-    "text_features": [
-      "hesitation_pauses",
-      "semantic_incoherence",
-      "low_confidence_answers",
-      "repeated_questions",
-      "self_correction",
-      "response_coherence"
-    ],
-    "temporal_features": [
-      "response_time_seconds",
-      "pause_frequency",
-      "speech_rate"
-    ],
-    "cognitive_features": [
-      "cognitive_risk_score",
-      "confusion_detected",
-      "memory_issue"
-    ],
-    "context_features": [
-      "category_encoded",
-      "priority_encoded",
-      "time_of_day_encoded"
-    ]
+  "feature_count": 17,
+  "cv_folds": 5,
+  "hyperparameter_search_iterations": 50,
+  "optimizations_applied": [
+    "imblearn Pipeline (SMOTE + Scaler + SelectKBest + Classifier \u2014 no CV data leakage)",
+    "SMOTE oversampling for class imbalance (applied per CV fold)",
+    "RandomizedSearchCV hyperparameter tuning (50 iterations per algorithm)",
+    "SelectKBest feature selection (k searched within pipeline)",
+    "Optimal decision threshold via precision-recall curve (binary models)",
+    "Overfitting detection (train vs test gap analysis)",
+    "Feature importance ranking",
+    "Reduced circular label leakage (supplement columns for label derivation)"
+  ],
+  "optimal_thresholds": {
+    "confusion_detection": 0.3980833136804289,
+    "caregiver_alert": 0.9633003040680581
   },
   "models_trained": [
     "confusion_detection",
-    "cognitive_risk",
     "caregiver_alert",
-    "response_classifier"
+    "severity_classifier"
   ],
-  "training_results": {
+  "results": {
     "confusion_detection": {
-      "model_path": "models\\reminder_system\\confusion_detection_model.joblib",
-      "best_score": 0.986070324072871,
-      "feature_importance": null,
-      "results": {
-        "random_forest": {
-          "model": "RandomForestClassifier(class_weight={np.int64(0): np.float64(0.8361204013377926),\n                                     np.int64(1): np.float64(1.243781094527363)},\n                       random_state=42)",
-          "score": 0.9698536864263624,
-          "classification_report": {
-            "0": {
-              "precision": 0.9256198347107438,
-              "recall": 0.9372384937238494,
-              "f1-score": 0.9313929313929314,
-              "support": 239.0
-            },
-            "1": {
-              "precision": 0.9050632911392406,
-              "recall": 0.8881987577639752,
-              "f1-score": 0.896551724137931,
-              "support": 161.0
-            },
-            "accuracy": 0.9175,
-            "macro avg": {
-              "precision": 0.9153415629249921,
-              "recall": 0.9127186257439123,
-              "f1-score": 0.9139723277654312,
-              "support": 400.0
-            },
-            "weighted avg": {
-              "precision": 0.9173458259232138,
-              "recall": 0.9175,
-              "f1-score": 0.9173693454727938,
-              "support": 400.0
-            }
+      "best_algorithm": "random_forest",
+      "test_accuracy": 0.9651162790697675,
+      "test_f1": 0.6086956472589792,
+      "test_f1_default_threshold": 0.5454545454545454,
+      "test_auc": 0.9637096774193549,
+      "test_precision": 0.5384615384615384,
+      "test_recall": 0.7,
+      "optimal_threshold": 0.3980833136804289,
+      "algo_comparison": {
+        "gradient_boosting": {
+          "cv_score": 0.6988706945228683,
+          "cv_train_score": 1.0,
+          "cv_gap": 0.3011293054771317,
+          "best_params": {
+            "classifier__learning_rate": 0.13037064504457,
+            "classifier__max_depth": 4,
+            "classifier__min_samples_leaf": 2,
+            "classifier__min_samples_split": 13,
+            "classifier__n_estimators": 173,
+            "classifier__subsample": 0.8032795106962874,
+            "feature_selection__k": 17
           }
         },
-        "gradient_boosting": {
-          "model": "GradientBoostingClassifier(random_state=42)",
-          "score": 0.984030250266379,
-          "classification_report": {
-            "0": {
-              "precision": 0.9206349206349206,
-              "recall": 0.9707112970711297,
-              "f1-score": 0.945010183299389,
-              "support": 239.0
-            },
-            "1": {
-              "precision": 0.9527027027027027,
-              "recall": 0.8757763975155279,
-              "f1-score": 0.912621359223301,
-              "support": 161.0
-            },
-            "accuracy": 0.9325,
-            "macro avg": {
-              "precision": 0.9366688116688117,
-              "recall": 0.9232438472933289,
-              "f1-score": 0.928815771261345,
-              "support": 400.0
-            },
-            "weighted avg": {
-              "precision": 0.9335422029172028,
-              "recall": 0.9325,
-              "f1-score": 0.9319736816087635,
-              "support": 400.0
-            }
+        "random_forest": {
+          "cv_score": 0.7042932719454459,
+          "cv_train_score": 0.8146695910605685,
+          "cv_gap": 0.11037631911512258,
+          "best_params": {
+            "classifier__max_depth": 10,
+            "classifier__max_features": "log2",
+            "classifier__min_samples_leaf": 7,
+            "classifier__min_samples_split": 6,
+            "classifier__n_estimators": 241,
+            "feature_selection__k": 17
           }
         },
         "logistic_regression": {
-          "model": "LogisticRegression(class_weight={np.int64(0): np.float64(0.8361204013377926),\n                                 np.int64(1): np.float64(1.243781094527363)},\n                   random_state=42)",
-          "score": 0.986070324072871,
-          "classification_report": {
-            "0": {
-              "precision": 0.9372384937238494,
-              "recall": 0.9372384937238494,
-              "f1-score": 0.9372384937238494,
-              "support": 239.0
-            },
-            "1": {
-              "precision": 0.906832298136646,
-              "recall": 0.906832298136646,
-              "f1-score": 0.906832298136646,
-              "support": 161.0
-            },
-            "accuracy": 0.925,
-            "macro avg": {
-              "precision": 0.9220353959302476,
-              "recall": 0.9220353959302476,
-              "f1-score": 0.9220353959302476,
-              "support": 400.0
-            },
-            "weighted avg": {
-              "precision": 0.925,
-              "recall": 0.925,
-              "f1-score": 0.925,
-              "support": 400.0
-            }
+          "cv_score": 0.571503495905773,
+          "cv_train_score": 0.6185439946858827,
+          "cv_gap": 0.04704049878010974,
+          "best_params": {
+            "classifier__C": 3.2618332202674702,
+            "classifier__l1_ratio": 1.0,
+            "classifier__penalty": "elasticnet",
+            "classifier__solver": "saga",
+            "feature_selection__k": 17
           }
         }
-      }
-    },
-    "cognitive_risk": {
-      "model_path": "models\\reminder_system\\cognitive_risk_model.joblib",
-      "scaler_path": "models\\reminder_system\\cognitive_risk_scaler.joblib",
-      "r2_score": 0.9488438144052761,
-      "mse": 0.0044601,
+      },
+      "overfitting_check": {
+        "train_acc": 0.976721629485936,
+        "test_acc": 0.9612403100775194,
+        "gap_acc": 0.015481319408416572,
+        "train_f1": 0.9785097010422387,
+        "test_f1": 0.9629236532541307,
+        "gap_f1": 0.015586047788108015
+      },
       "feature_importance": {
-        "response_time_seconds": 0.05297988401765173,
-        "combined_risk": 0.9470201159823484
-      }
+        "uncertainty_markers": 0.2983997515717519,
+        "unique_word_ratio": 0.22031480537473305,
+        "self_corrections": 0.09528268463167282,
+        "sentence_count": 0.08282228324101915,
+        "tangentiality": 0.05636524125394769,
+        "task_completion_score": 0.04401556314051642,
+        "word_count": 0.04377181787589637,
+        "language_deterioration_score": 0.04222243863336875,
+        "hesitation_count": 0.024002310450643435,
+        "narrative_coherence": 0.02216574513825865
+      },
+      "selected_features": [
+        "word_count",
+        "sentence_count",
+        "avg_words_per_sentence",
+        "avg_word_length",
+        "unique_word_ratio",
+        "hesitation_count",
+        "false_starts",
+        "self_corrections",
+        "uncertainty_markers",
+        "semantic_incoherence",
+        "word_finding_difficulty",
+        "circumlocution",
+        "tangentiality",
+        "narrative_coherence",
+        "response_coherence",
+        "task_completion_score",
+        "language_deterioration_score"
+      ],
+      "best_params": {
+        "classifier__max_depth": 10,
+        "classifier__max_features": "log2",
+        "classifier__min_samples_leaf": 7,
+        "classifier__min_samples_split": 6,
+        "classifier__n_estimators": 241,
+        "feature_selection__k": 17
+      },
+      "label_derivation": "Derived from supplement columns (cognitive_load_indicator, repeated_questions, low_confidence_answers, discourse_coherence_score, memory_references) with lower-weight model-feature signals (semantic_incoherence, narrative_coherence). Reduced circular leakage vs prior version."
     },
     "caregiver_alert": {
-      "model_path": "models\\reminder_system\\caregiver_alert_model.joblib",
-      "scaler_path": "models\\reminder_system\\caregiver_alert_scaler.joblib",
-      "auc_score": 1.0,
-      "cv_scores": [
-        1.0,
-        1.0,
-        1.0,
-        1.0,
-        1.0
+      "best_algorithm": "gradient_boosting",
+      "test_accuracy": 0.9806201550387597,
+      "test_f1": 0.857142852179592,
+      "test_f1_default_threshold": 0.7727272727272727,
+      "test_auc": 0.9903105042942083,
+      "test_precision": 0.9375,
+      "test_recall": 0.7894736842105263,
+      "optimal_threshold": 0.9633003040680581,
+      "algo_comparison": {
+        "gradient_boosting": {
+          "cv_score": 0.8599961442066706,
+          "cv_train_score": 1.0,
+          "cv_gap": 0.1400038557933294,
+          "best_params": {
+            "classifier__learning_rate": 0.0436510290873393,
+            "classifier__max_depth": 5,
+            "classifier__min_samples_leaf": 14,
+            "classifier__min_samples_split": 18,
+            "classifier__n_estimators": 166,
+            "classifier__subsample": 0.9533976089065036,
+            "feature_selection__k": 17
+          }
+        },
+        "random_forest": {
+          "cv_score": 0.7902483603447868,
+          "cv_train_score": 0.8802544534771976,
+          "cv_gap": 0.0900060931324107,
+          "best_params": {
+            "classifier__max_depth": 7,
+            "classifier__max_features": null,
+            "classifier__min_samples_leaf": 5,
+            "classifier__min_samples_split": 13,
+            "classifier__n_estimators": 210,
+            "feature_selection__k": 17
+          }
+        },
+        "logistic_regression": {
+          "cv_score": 0.6953065489087444,
+          "cv_train_score": 0.7315973928383952,
+          "cv_gap": 0.03629084392965076,
+          "best_params": {
+            "classifier__C": 4.514992519695429,
+            "classifier__l1_ratio": 0.5,
+            "classifier__penalty": "elasticnet",
+            "classifier__solver": "saga",
+            "feature_selection__k": 17
+          }
+        }
+      },
+      "overfitting_check": {
+        "train_acc": 1.0,
+        "test_acc": 0.9612403100775194,
+        "gap_acc": 0.03875968992248058,
+        "train_f1": 1.0,
+        "test_f1": 0.9636366622472259,
+        "gap_f1": 0.036363337752774116
+      },
+      "feature_importance": {
+        "unique_word_ratio": 0.8215379197251101,
+        "uncertainty_markers": 0.048524586794547554,
+        "language_deterioration_score": 0.03766216169103335,
+        "word_finding_difficulty": 0.028723599686840955,
+        "avg_word_length": 0.022489059739449743,
+        "sentence_count": 0.014100869264608901,
+        "self_corrections": 0.006560435655391852,
+        "hesitation_count": 0.006555786344483454,
+        "avg_words_per_sentence": 0.00578911079550524,
+        "word_count": 0.003326633790504927
+      },
+      "selected_features": [
+        "word_count",
+        "sentence_count",
+        "avg_words_per_sentence",
+        "avg_word_length",
+        "unique_word_ratio",
+        "hesitation_count",
+        "false_starts",
+        "self_corrections",
+        "uncertainty_markers",
+        "semantic_incoherence",
+        "word_finding_difficulty",
+        "circumlocution",
+        "tangentiality",
+        "narrative_coherence",
+        "response_coherence",
+        "task_completion_score",
+        "language_deterioration_score"
       ],
-      "classification_report": {
-        "0": {
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1-score": 1.0,
-          "support": 239.0
-        },
-        "1": {
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1-score": 1.0,
-          "support": 161.0
-        },
-        "accuracy": 1.0,
-        "macro avg": {
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1-score": 1.0,
-          "support": 400.0
-        },
-        "weighted avg": {
-          "precision": 1.0,
-          "recall": 1.0,
-          "f1-score": 1.0,
-          "support": 400.0
-        }
+      "best_params": {
+        "classifier__learning_rate": 0.0436510290873393,
+        "classifier__max_depth": 5,
+        "classifier__min_samples_leaf": 14,
+        "classifier__min_samples_split": 18,
+        "classifier__n_estimators": 166,
+        "classifier__subsample": 0.9533976089065036,
+        "feature_selection__k": 17
       },
-      "feature_importance": {
-        "response_time_seconds": 0.11170248097725022,
-        "cognitive_risk_score": 0.3075276788026684,
-        "confusion_detected": 0.23915723795863764,
-        "memory_issue": 6.315981076878386e-15,
-        "combined_risk": 0.303238278580072,
-        "cognitive_severity_encoded": 0.03837432368136547
-      }
+      "label_derivation": "Derived from: dementia_label (weighted 2x) + confusion_label + dementia_severity + semantic_fluency + cognitive_load_indicator + task_completion_score (0.5x). Alert if combined score >= 4.5. Primarily supplement columns."
     },
-    "response_classifier": {
-      "model_path": "models\\reminder_system\\response_classifier_model.joblib",
-      "encoder_path": "models\\reminder_system\\response_classifier_encoder.joblib",
-      "accuracy": 0.7175,
-      "classification_report": {
-        "0": {
-          "precision": 0.8205128205128205,
-          "recall": 0.8421052631578947,
-          "f1-score": 0.8311688311688312,
-          "support": 114.0
+    "severity_classifier": {
+      "best_algorithm": "gradient_boosting",
+      "test_accuracy": 0.8178294573643411,
+      "test_f1_weighted": 0.8186836802950987,
+      "algo_comparison": {
+        "gradient_boosting": {
+          "cv_score": 0.8731479710240017,
+          "cv_train_score": 1.0,
+          "cv_gap": 0.12685202897599834,
+          "best_params": {
+            "classifier__learning_rate": 0.15355471632317927,
+            "classifier__max_depth": 5,
+            "classifier__min_samples_leaf": 14,
+            "classifier__min_samples_split": 11,
+            "classifier__n_estimators": 236,
+            "classifier__subsample": 0.8779139732158818,
+            "feature_selection__k": 17
+          }
         },
-        "1": {
-          "precision": 0.4375,
-          "recall": 0.3333333333333333,
-          "f1-score": 0.3783783783783784,
-          "support": 21.0
+        "random_forest": {
+          "cv_score": 0.8553767894087659,
+          "cv_train_score": 0.9312097085705746,
+          "cv_gap": 0.07583291916180868,
+          "best_params": {
+            "classifier__max_depth": 10,
+            "classifier__max_features": "log2",
+            "classifier__min_samples_leaf": 7,
+            "classifier__min_samples_split": 6,
+            "classifier__n_estimators": 241,
+            "feature_selection__k": 17
+          }
         },
-        "2": {
-          "precision": 0.6440677966101694,
-          "recall": 0.6440677966101694,
-          "f1-score": 0.6440677966101694,
-          "support": 59.0
-        },
-        "3": {
-          "precision": 0.78,
-          "recall": 0.75,
-          "f1-score": 0.7647058823529411,
-          "support": 104.0
-        },
-        "4": {
-          "precision": 0.6296296296296297,
-          "recall": 0.6666666666666666,
-          "f1-score": 0.6476190476190476,
-          "support": 102.0
-        },
-        "accuracy": 0.7175,
-        "macro avg": {
-          "precision": 0.662342049350524,
-          "recall": 0.6472346119536128,
-          "f1-score": 0.6531879872258736,
-          "support": 400.0
-        },
-        "weighted avg": {
-          "precision": 0.7151704594017094,
-          "recall": 0.7175,
-          "f1-score": 0.7157143683026037,
-          "support": 400.0
+        "logistic_regression": {
+          "cv_score": 0.8231680708132924,
+          "cv_train_score": 0.8456165090951238,
+          "cv_gap": 0.022448438281831407,
+          "best_params": {
+            "classifier__C": 1.0889142699330445,
+            "classifier__l1_ratio": 1.0,
+            "classifier__penalty": "elasticnet",
+            "classifier__solver": "saga",
+            "feature_selection__k": 17
+          }
         }
       },
+      "overfitting_check": {
+        "train_acc": 1.0,
+        "test_acc": 0.8178294573643411,
+        "gap_acc": 0.1821705426356589,
+        "train_f1": 1.0,
+        "test_f1": 0.8186836802950987,
+        "gap_f1": 0.18131631970490125
+      },
       "feature_importance": {
-        "response_time_seconds": 1.0
-      }
+        "unique_word_ratio": 0.44851146615315707,
+        "language_deterioration_score": 0.18827189719578596,
+        "uncertainty_markers": 0.08231961694227391,
+        "tangentiality": 0.04161117808629456,
+        "word_count": 0.041001606973268837,
+        "task_completion_score": 0.03737459112739881,
+        "word_finding_difficulty": 0.035288812506107915,
+        "sentence_count": 0.03506178929967615,
+        "avg_word_length": 0.030095066202979446,
+        "avg_words_per_sentence": 0.02346013529042138
+      },
+      "selected_features": [
+        "word_count",
+        "sentence_count",
+        "avg_words_per_sentence",
+        "avg_word_length",
+        "unique_word_ratio",
+        "hesitation_count",
+        "false_starts",
+        "self_corrections",
+        "uncertainty_markers",
+        "semantic_incoherence",
+        "word_finding_difficulty",
+        "circumlocution",
+        "tangentiality",
+        "narrative_coherence",
+        "response_coherence",
+        "task_completion_score",
+        "language_deterioration_score"
+      ],
+      "best_params": {
+        "classifier__learning_rate": 0.15355471632317927,
+        "classifier__max_depth": 5,
+        "classifier__min_samples_leaf": 14,
+        "classifier__min_samples_split": 11,
+        "classifier__n_estimators": 236,
+        "classifier__subsample": 0.8779139732158818,
+        "feature_selection__k": 17
+      },
+      "classes": [
+        "normal",
+        "mild_concern",
+        "high_risk"
+      ],
+      "label_derivation": "Derived from composite: dementia_label (2x) + dementia_severity (2x) + confusion_label (1.5x) + cognitive_load_indicator + low_confidence_answers. Adaptive percentile cuts at 40th/75th. Primarily supplement columns."
     }
   }
 }

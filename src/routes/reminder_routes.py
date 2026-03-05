@@ -45,6 +45,7 @@ from src.features.reminder_system.weekly_report_generator import (
     WeeklyReportGenerator, WeeklyCognitiveReport
 )
 from src.services.reminder_db_service import ReminderDatabaseService
+from src.services.user_cognitive_score import UserCognitiveScoreService
 from src.services.chatbot import get_whisper_service
 from src.features.conversational_ai.nlp.nlp_engine import NLPEngine
 
@@ -68,6 +69,7 @@ behavior_tracker = BehaviorTracker()
 scheduler = AdaptiveReminderScheduler(behavior_tracker, reminder_analyzer)
 caregiver_notifier = CaregiverNotifier()
 report_generator = WeeklyReportGenerator(behavior_tracker)
+cognitive_score_service = UserCognitiveScoreService(reminder_analyzer, behavior_tracker)
 nlp_engine = NLPEngine()
 
 # Database service - initialized lazily
@@ -1055,6 +1057,48 @@ async def get_user_dashboard(user_id: str, days: int = 7):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
+        )
+
+
+@router.get("/score/{user_id}", response_model=dict)
+async def get_user_score(
+    user_id: str,
+    days: int = 30,
+    recent_responses: Optional[str] = None,
+):
+    """
+    Get composite cognitive score for a user (0-100%).
+
+    Combines ML model predictions with reminder adherence data:
+    - **Cognitive risk** (40%): Dementia-risk model output
+    - **Confusion & severity** (20%): Confusion detection + severity classifier
+    - **Adherence** (25%): Confirmed vs missed/ignored reminders
+    - **Behavioral trend** (15%): Improving or declining patterns
+
+    Lower score = healthier. Higher score = more concern.
+
+    - **user_id**: User identifier
+    - **days**: Analysis period in days (default 30)
+    - **recent_responses**: Pipe-separated recent text responses to run through
+      ML models (e.g. "I took my medicine|What was I doing?|Yes I remember")
+    """
+    try:
+        responses = []
+        if recent_responses:
+            responses = [r.strip() for r in recent_responses.split("|") if r.strip()]
+
+        result = cognitive_score_service.compute_user_score(
+            user_id=user_id,
+            recent_responses=responses,
+            days=days,
+        )
+        return {"status": "success", "score": result}
+
+    except Exception as e:
+        logger.error(f"Error computing user score: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
         )
 
 
