@@ -11,6 +11,8 @@ from .mmse_service import (
     start_mmse_assessment,
     submit_mmse_question,
     finalize_mmse_assessment,
+    get_mmse_assessments_by_user,
+    get_caregiver_patients_with_assessments
 )
 
 router = APIRouter(prefix="/api/mmse", tags=["MMSE Screening"])
@@ -46,3 +48,13 @@ async def submit_mmse(
 @router.post("/finalize", response_model=MMSEFinalizeResponse)
 async def finalize_mmse(assessment_id: str, user_id: str):
     return await finalize_mmse_assessment(assessment_id, user_id)
+
+
+@router.get("/user/{user_id}")
+async def get_user_mmse_assessments(user_id: str):
+    return await get_mmse_assessments_by_user(user_id)
+
+@router.get("/caregiver/{caregiver_id}/patients")
+async def get_caregiver_patients(caregiver_id: str):
+    return await get_caregiver_patients_with_assessments(caregiver_id)
+
