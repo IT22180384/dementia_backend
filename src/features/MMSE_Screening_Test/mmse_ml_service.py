@@ -1,3 +1,6 @@
+
+
+
 # src/features/mmse_screening/mmse_ml_service.py
 
 import os
@@ -40,27 +43,47 @@ class MMSEModels:
 
         print(f"[MMSE] Loading models from: {model_base}")
 
-        self.audio_model = joblib.load(os.path.join(model_base, "best_audio_model.pkl"))
-        self.audio_scaler = joblib.load(os.path.join(model_base, "audio_scaler.pkl"))
+        def _load_hf_or_local(repo_id: str, filename: str, local_path: str):
+            """Helper to load from HF with local fallback."""
+            try:
+                print(f"[MMSE] Downloading {filename} from Hugging Face: {repo_id}")
+                hf_path = hf_hub_download(repo_id=repo_id, filename=filename)
+                return joblib.load(hf_path)
+            except Exception as e:
+                print(f"[MMSE] Warning: Could not download {filename} from HF ({e}). Using local fallback.")
+                if os.path.exists(local_path):
+                    return joblib.load(local_path)
+                else:
+                    raise FileNotFoundError(f"Neither HF nor local model found: {local_path}")
 
-        # Load text model from Hugging Face Hub (with fallback to local)
-        try:
-            print(f"[MMSE] Downloading text model from Hugging Face: katharushimethmini02/best_text_model")
-            text_model_repo = "katharushimethmini02/best_text_model"
-            text_model_filename = "best_text_model.pkl"
-            
-            hf_model_path = hf_hub_download(
-                repo_id=text_model_repo,
-                filename=text_model_filename
-            )
-            self.text_model = joblib.load(hf_model_path)
-            print(f"[MMSE] Successfully loaded text model from Hugging Face")
-        except Exception as e:
-            print(f"[MMSE] Warning: Could not download model from HF ({e}). Using local fallback.")
-            self.text_model = joblib.load(os.path.join(model_base, "best_text_model.pkl"))
+        # 1. Audio models
+        self.audio_model = _load_hf_or_local(
+            "katharushimethmini02/best_audio_model", 
+            "best_audio_model.pkl", 
+            os.path.join(model_base, "best_audio_model.pkl")
+        )
+        self.audio_scaler = _load_hf_or_local(
+            "katharushimethmini02/audio_scaler", 
+            "audio_scaler.pkl", 
+            os.path.join(model_base, "audio_scaler.pkl")
+        )
 
-        self.text_tfidf = joblib.load(os.path.join(model_base, "text_tfidf.pkl"))
-        self.text_pca = joblib.load(os.path.join(model_base, "text_pca.pkl"))
+        # 2. Text models
+        self.text_model = _load_hf_or_local(
+            "katharushimethmini02/best_text_model", 
+            "best_text_model.pkl", 
+            os.path.join(model_base, "best_text_model.pkl")
+        )
+        self.text_tfidf = _load_hf_or_local(
+            "katharushimethmini02/text_tfidf", 
+            "text_tfidf.pkl", 
+            os.path.join(model_base, "text_tfidf.pkl")
+        )
+        self.text_pca = _load_hf_or_local(
+            "katharushimethmini02/text_pca", 
+            "text_pca.pkl", 
+            os.path.join(model_base, "text_pca.pkl")
+        )
 
         whisper_model_name = os.getenv("WHISPER_MODEL", "small")
         self.whisper_model = whisper.load_model(whisper_model_name)
