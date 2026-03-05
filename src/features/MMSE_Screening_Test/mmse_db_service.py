@@ -24,12 +24,17 @@ class MMSEDatabaseService:
     def __init__(self):
         self.users = _db["users"]
         self.assessments = _db["assessments"]
+        self.caregivers = _db["caregivers"]
 
-    #User 
+    # ----------------------------
+    # User
+    # ----------------------------
     async def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
         return await self.users.find_one({"user_id": user_id})
 
-    #Assessment lifecycle
+    # ----------------------------
+    # Assessment lifecycle
+    # ----------------------------
     async def create_assessment(self, user_id: str) -> str:
         doc = {
             "user_id": user_id,
@@ -40,6 +45,7 @@ class MMSEDatabaseService:
             "ml_summary": {},
             "status": "in_progress",
         }
+
         result = await self.assessments.insert_one(doc)
         return str(result.inserted_id)
 
@@ -54,7 +60,10 @@ class MMSEDatabaseService:
             {"$push": {"questions": question_doc}},
         )
 
-    async def get_assessment(self, assessment_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+    async def get_assessment(
+        self, assessment_id: str, user_id: str
+    ) -> Optional[Dict[str, Any]]:
+
         if not ObjectId.is_valid(assessment_id):
             return None
 
@@ -84,6 +93,72 @@ class MMSEDatabaseService:
             },
         )
 
+    # ----------------------------
+    # Get assessments by user
+    # ----------------------------
+    async def get_user_assessments(self, user_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all MMSE assessments for a given user.
+        """
 
-# singleton instance for use across the service
+        cursor = self.assessments.find(
+            {"user_id": user_id, "assessment_type": "MMSE"}
+        ).sort("assessment_date", -1)
+
+        results = []
+
+        async for doc in cursor:
+            doc["_id"] = str(doc["_id"])
+            results.append(doc)
+
+        return results
+
+    # ----------------------------
+    # Get caregiver patients with assessments
+    # ----------------------------
+    async def get_patients_with_assessments(
+        self, caregiver_id: str
+    ) -> List[Dict[str, Any]]:
+
+        caregiver = await self.caregivers.find_one({"caregiver_id": caregiver_id})
+
+        if not caregiver:
+            return []
+
+        patient_ids = caregiver.get("patient_ids", [])
+
+        patients_data = []
+
+        for pid in patient_ids:
+
+            user = await self.users.find_one({"user_id": pid})
+
+            if not user:
+                continue
+
+            assessments_cursor = self.assessments.find(
+                {"user_id": pid, "assessment_type": "MMSE"}
+            ).sort("assessment_date", -1)
+
+            assessments = []
+
+            async for doc in assessments_cursor:
+                doc["_id"] = str(doc["_id"])
+                assessments.append(doc)
+
+            patients_data.append(
+                {
+                    "user_id": user["user_id"],
+                    "full_name": user.get("full_name"),
+                    "email": user.get("email"),
+                    "age": user.get("age"),
+                    "gender": user.get("gender"),
+                    "assessments": assessments,
+                }
+            )
+
+        return patients_data
+
+
+# Singleton instance
 db_service = MMSEDatabaseService()
