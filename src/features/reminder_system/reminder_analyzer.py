@@ -154,45 +154,40 @@ class PittBasedReminderAnalyzer:
                 user_response, features, confusion_detected, memory_issue
             )
             
-            # Get enhanced model predictions if available
+            # Get Pitt model predictions if available
             model_confidence = 0.0
             enhanced_predictions = {}
             
             if self.enhanced_models:
                 try:
-                    # Convert features dict to DataFrame for model prediction
-                    import pandas as pd
-                    features_df = pd.DataFrame([features])
+                    # Predict cognitive risk using pure Pitt-trained model
+                    dementia_prob, risk_conf = self.enhanced_models.predict_cognitive_risk(user_response)
+                    confusion_pred, confusion_conf = self.enhanced_models.predict_confusion_detection(user_response)
+                    caregiver_pred, caregiver_risk = self.enhanced_models.predict_caregiver_alert(user_response)
                     
-                    # Get predictions from all enhanced models
-                    confusion_pred, confusion_conf = self.enhanced_models.predict_confusion_detection(features_df)
-                    risk_pred, risk_conf = self.enhanced_models.predict_cognitive_risk(features_df)
-                    caregiver_pred, caregiver_conf = self.enhanced_models.predict_caregiver_alert(features_df)
-                    response_pred, response_conf = self.enhanced_models.predict_response_classification(features_df)
-                    
-                    # Store enhanced predictions
+                    # Store predictions
                     enhanced_predictions = {
+                        'cognitive_risk': {'prediction': float(dementia_prob), 'confidence': float(risk_conf)},
                         'confusion_detection': {'prediction': bool(confusion_pred), 'confidence': float(confusion_conf)},
-                        'cognitive_risk': {'prediction': bool(risk_pred), 'confidence': float(risk_conf)},
-                        'caregiver_alert': {'prediction': bool(caregiver_pred), 'confidence': float(caregiver_conf)},
-                        'response_classification': {'prediction': str(response_pred), 'confidence': float(response_conf)}
+                        'caregiver_alert': {'prediction': bool(caregiver_pred), 'confidence': float(caregiver_risk)},
                     }
                     
-                    # Update analysis with enhanced predictions
-                    confusion_detected = bool(confusion_pred)
-                    # Use enhanced cognitive risk if confidence is high
-                    if risk_conf > 0.7:
-                        cognitive_risk = max(cognitive_risk, float(risk_pred))
+                    # Update analysis with Pitt model predictions
+                    if confusion_conf > 0.4:
+                        confusion_detected = bool(confusion_pred)
                     
-                    model_confidence = float(np.mean([confusion_conf, risk_conf, caregiver_conf, response_conf]))
+                    # Use Pitt model's dementia probability as cognitive risk
+                    cognitive_risk = max(cognitive_risk, dementia_prob)
                     
-                    logger.info(f"[SUCCESS] Enhanced model predictions: confusion={confusion_pred}, risk={risk_pred}, caregiver={caregiver_pred}")
+                    model_confidence = float(risk_conf)
+                    
+                    logger.info(f"[SUCCESS] Pitt model predictions: dementia_prob={dementia_prob:.3f}, confusion={confusion_pred}, caregiver_alert={caregiver_pred}")
                     
                 except Exception as e:
-                    logger.warning(f"Enhanced model prediction failed: {e}")
+                    logger.warning(f"Pitt model prediction failed: {e}")
                     enhanced_predictions = {}
             
-            # Fallback to legacy model if enhanced models not available
+            # Fallback to legacy model if Pitt model not available
             elif self.model:
                 try:
                     feature_values = list(features.values())
@@ -226,7 +221,7 @@ class PittBasedReminderAnalyzer:
                 'confidence': model_confidence,
                 'nlp_analysis': nlp_analysis,
                 'enhanced_predictions': enhanced_predictions,  # New: Include enhanced model predictions
-                'model_type': 'enhanced' if self.enhanced_models else 'legacy' if self.model else 'rule_based'
+                'model_type': 'pitt_pure' if self.enhanced_models else 'legacy' if self.model else 'rule_based'
             }
             
         except Exception as e:
