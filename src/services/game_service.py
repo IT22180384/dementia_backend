@@ -320,7 +320,8 @@ async def process_game_session(
     gameType: str,
     level: int,
     trials: Optional[List[Dict]] = None,
-    summary: Optional[Dict] = None
+    summary: Optional[Dict] = None,
+    caregiverId: Optional[str] = None
 ) -> Dict:
     """
     Complete pipeline for processing a game session.
@@ -328,7 +329,7 @@ async def process_game_session(
     """
     logger.info("=" * 70)
     logger.info(f"📥 NEW SESSION REQUEST: {sessionId}")
-    logger.info(f"   User: {userId}")
+    logger.info(f"   User: {userId}, Caregiver: {caregiverId or 'not assigned'}")
     logger.info(f"   Trials: {len(trials) if trials else 0}, Summary: {'Yes' if summary else 'No'}")
     if trials and len(trials) > 0:
         logger.info(f"   Sample RT (raw): {trials[0].get('rt_raw', 0):.3f}, Correct: {trials[0].get('correct', 0)}")
@@ -379,6 +380,7 @@ async def process_game_session(
     
     session_doc = {
         "userId": userId,
+        "caregiverId": caregiverId,
         "sessionId": sessionId,
         "timestamp": datetime.utcnow(),
         "gameType": gameType,
@@ -398,6 +400,7 @@ async def process_game_session(
         alerts = Database.get_collection("alerts")
         alert = {
             "userId": userId,
+            "caregiverId": caregiverId,
             "alertType": "RISK_INCREASE",
             "message": f"High dementia risk detected (score: {prediction['riskScore0_100']})",
             "severity": "HIGH",

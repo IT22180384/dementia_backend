@@ -137,6 +137,30 @@ async def get_current_caregiver(authorization: Optional[str] = Header(None)):
     return payload
 
 
+async def _caregiver_owns_patient(caregiver_id: str, patient_id: str) -> bool:
+    """
+    Return True if patient_id belongs to this caregiver.
+    Checks both caregivers.patient_ids AND users.caregiver_id so both
+    linking paths (link-patient API and mobile-app registration) are covered.
+    """
+    # Check caregivers.patient_ids
+    caregivers_col = Database.get_collection("caregivers")
+    caregiver = await caregivers_col.find_one(
+        {"caregiver_id": caregiver_id, "patient_ids": patient_id},
+        {"caregiver_id": 1}
+    )
+    if caregiver:
+        return True
+
+    # Fallback: check users.caregiver_id
+    users_col = Database.get_collection("users")
+    user = await users_col.find_one(
+        {"user_id": patient_id, "caregiver_id": caregiver_id},
+        {"user_id": 1}
+    )
+    return user is not None
+
+
 # ===== ROUTES =====
 
 @router.post("/register", response_model=dict)
@@ -357,6 +381,52 @@ async def change_password(
     except Exception as e:
         logger.error(f"Change password error: {e}")
         raise HTTPException(status_code=500, detail="Failed to change password")
+
+
+@router.post("/sync-patients", response_model=dict)
+async def sync_patients(current_caregiver = Depends(get_current_caregiver)):
+    """
+    Sync patients: find all users whose caregiver_id matches the logged-in caregiver
+    and ensure they are in the caregiver's patient_ids list.
+    Call this once after login to fix any existing users that were linked via the
+    mobile app (user.caregiver_id set) but not yet in caregivers.patient_ids.
+
+    Requires: Bearer token in Authorization header
+    """
+    try:
+        caregiver_id = current_caregiver["caregiver_id"]
+        users_collection = Database.get_collection("users")
+        caregivers_collection = Database.get_collection("caregivers")
+
+        # Find all users assigned to this caregiver
+        cursor = users_collection.find(
+            {"caregiver_id": caregiver_id, "role": "user"},
+            {"user_id": 1}
+        )
+        user_ids = [doc["user_id"] async for doc in cursor]
+
+        if user_ids:
+            # Add all of them to patient_ids (addToSet prevents duplicates)
+            await caregivers_collection.update_one(
+                {"caregiver_id": caregiver_id},
+                {
+                    "$addToSet": {"patient_ids": {"$each": user_ids}},
+                    "$set": {"updated_at": datetime.now()}
+                }
+            )
+
+        logger.info(f"Synced {len(user_ids)} patients for caregiver {caregiver_id}")
+        return {
+            "success": True,
+            "synced_patient_ids": user_ids,
+            "total_synced": len(user_ids)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Sync patients error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to sync patients")
 
 
 @router.post("/link-patient", response_model=dict)
@@ -628,11 +698,8 @@ async def get_patient_dashboard(
         service = get_caregiver_service(Database.db)
         caregiver_id = current_caregiver["caregiver_id"]
         
-        # Verify caregiver has access to this patient
-        profile = await service.get_caregiver_by_id(caregiver_id)
-        if not profile:
-            raise HTTPException(status_code=404, detail="Caregiver profile not found")
-        if patient_id not in profile.get("patient_ids", []):
+        # Verify caregiver has access to this patient (checks both patient_ids and user.caregiver_id)
+        if not await _caregiver_owns_patient(caregiver_id, patient_id):
             raise HTTPException(status_code=403, detail="Access denied to this patient")
         
         # Initialize reminder database service
@@ -753,11 +820,8 @@ async def get_patient_reminders(
         service = get_caregiver_service(Database.db)
         caregiver_id = current_caregiver["caregiver_id"]
         
-        # Verify caregiver has access to this patient
-        profile = await service.get_caregiver_by_id(caregiver_id)
-        if not profile:
-            raise HTTPException(status_code=404, detail="Caregiver profile not found")
-        if patient_id not in profile.get("patient_ids", []):
+        # Verify caregiver has access to this patient (checks both patient_ids and user.caregiver_id)
+        if not await _caregiver_owns_patient(caregiver_id, patient_id):
             raise HTTPException(status_code=403, detail="Access denied to this patient")
         
         # Initialize reminder database service
@@ -842,9 +906,8 @@ async def get_missed_reminders(
         service = get_caregiver_service(Database.db)
         caregiver_id = current_caregiver["caregiver_id"]
         
-        # Verify caregiver has access to this patient
-        profile = await service.get_caregiver_by_id(caregiver_id)
-        if patient_id not in profile.get("patient_ids", []):
+        # Verify caregiver has access to this patient (checks both patient_ids and user.caregiver_id)
+        if not await _caregiver_owns_patient(caregiver_id, patient_id):
             raise HTTPException(status_code=403, detail="Access denied to this patient")
         
         # Initialize reminder database service
@@ -914,9 +977,8 @@ async def get_snoozed_reminders(
         service = get_caregiver_service(Database.db)
         caregiver_id = current_caregiver["caregiver_id"]
 
-        # Verify caregiver has access to this patient
-        profile = await service.get_caregiver_by_id(caregiver_id)
-        if patient_id not in profile.get("patient_ids", []):
+        # Verify caregiver has access to this patient (checks both patient_ids and user.caregiver_id)
+        if not await _caregiver_owns_patient(caregiver_id, patient_id):
             raise HTTPException(status_code=403, detail="Access denied to this patient")
 
         reminder_db = ReminderDatabaseService()
@@ -992,8 +1054,8 @@ async def get_reminders_grouped(
         service = get_caregiver_service(Database.db)
         caregiver_id = current_caregiver["caregiver_id"]
 
-        profile = await service.get_caregiver_by_id(caregiver_id)
-        if patient_id not in profile.get("patient_ids", []):
+        # Verify caregiver has access to this patient (checks both patient_ids and user.caregiver_id)
+        if not await _caregiver_owns_patient(caregiver_id, patient_id):
             raise HTTPException(status_code=403, detail="Access denied to this patient")
 
         reminder_db = ReminderDatabaseService()
@@ -1083,10 +1145,8 @@ async def get_adherence_and_risk_score(
         service = get_caregiver_service(Database.db)
         caregiver_id = current_caregiver["caregiver_id"]
 
-        profile = await service.get_caregiver_by_id(caregiver_id)
-        if not profile:
-            raise HTTPException(status_code=404, detail="Caregiver profile not found")
-        if patient_id not in profile.get("patient_ids", []):
+        # Verify caregiver has access to this patient (checks both patient_ids and user.caregiver_id)
+        if not await _caregiver_owns_patient(caregiver_id, patient_id):
             raise HTTPException(status_code=403, detail="Access denied to this patient")
 
         # --- Reminder data ---
@@ -1246,8 +1306,8 @@ async def get_adherence_risk(
         service = get_caregiver_service(Database.db)
         caregiver_id = current_caregiver["caregiver_id"]
 
-        profile = await service.get_caregiver_by_id(caregiver_id)
-        if patient_id not in profile.get("patient_ids", []):
+        # Verify caregiver has access to this patient (checks both patient_ids and user.caregiver_id)
+        if not await _caregiver_owns_patient(caregiver_id, patient_id):
             raise HTTPException(status_code=403, detail="Access denied to this patient")
 
         reminder_db = ReminderDatabaseService()
@@ -1346,11 +1406,8 @@ async def get_activity_completion(
         service = get_caregiver_service(Database.db)
         caregiver_id = current_caregiver["caregiver_id"]
         
-        # Verify caregiver has access to this patient
-        profile = await service.get_caregiver_by_id(caregiver_id)
-        if not profile:
-            raise HTTPException(status_code=404, detail="Caregiver profile not found")
-        if patient_id not in profile.get("patient_ids", []):
+        # Verify caregiver has access to this patient (checks both patient_ids and user.caregiver_id)
+        if not await _caregiver_owns_patient(caregiver_id, patient_id):
             raise HTTPException(status_code=403, detail="Access denied to this patient")
         
         # Initialize reminder database service
@@ -1436,11 +1493,8 @@ async def get_medication_schedule(
         service = get_caregiver_service(Database.db)
         caregiver_id = current_caregiver["caregiver_id"]
         
-        # Verify caregiver has access to this patient
-        profile = await service.get_caregiver_by_id(caregiver_id)
-        if not profile:
-            raise HTTPException(status_code=404, detail="Caregiver profile not found")
-        if patient_id not in profile.get("patient_ids", []):
+        # Verify caregiver has access to this patient (checks both patient_ids and user.caregiver_id)
+        if not await _caregiver_owns_patient(caregiver_id, patient_id):
             raise HTTPException(status_code=403, detail="Access denied to this patient")
         
         # Initialize reminder database service
@@ -1537,9 +1591,8 @@ async def get_behavior_analysis(
         service = get_caregiver_service(Database.db)
         caregiver_id = current_caregiver["caregiver_id"]
         
-        # Verify caregiver has access to this patient
-        profile = await service.get_caregiver_by_id(caregiver_id)
-        if patient_id not in profile.get("patient_ids", []):
+        # Verify caregiver has access to this patient (checks both patient_ids and user.caregiver_id)
+        if not await _caregiver_owns_patient(caregiver_id, patient_id):
             raise HTTPException(status_code=403, detail="Access denied to this patient")
         
         # Get behavior pattern using trained models
@@ -1630,9 +1683,8 @@ async def get_weekly_report(
         service = get_caregiver_service(Database.db)
         caregiver_id = current_caregiver["caregiver_id"]
         
-        # Verify caregiver has access to this patient
-        profile = await service.get_caregiver_by_id(caregiver_id)
-        if patient_id not in profile.get("patient_ids", []):
+        # Verify caregiver has access to this patient (checks both patient_ids and user.caregiver_id)
+        if not await _caregiver_owns_patient(caregiver_id, patient_id):
             raise HTTPException(status_code=403, detail="Access denied to this patient")
         
         # Parse end date or use current date
@@ -1684,9 +1736,8 @@ async def get_caregiver_alerts(
         service = get_caregiver_service(Database.db)
         caregiver_id = current_caregiver["caregiver_id"]
         
-        # Verify caregiver has access to this patient
-        profile = await service.get_caregiver_by_id(caregiver_id)
-        if patient_id not in profile.get("patient_ids", []):
+        # Verify caregiver has access to this patient (checks both patient_ids and user.caregiver_id)
+        if not await _caregiver_owns_patient(caregiver_id, patient_id):
             raise HTTPException(status_code=403, detail="Access denied to this patient")
         
         # Get alerts from database

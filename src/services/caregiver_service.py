@@ -346,7 +346,8 @@ class CaregiverService:
         return True
     
     async def link_patient(self, caregiver_id: str, patient_id: str) -> Dict[str, Any]:
-        """Link a patient to a caregiver"""
+        """Link a patient to a caregiver.
+        Updates both sides: caregivers.patient_ids and users.caregiver_id"""
         collection = await self._get_collection()
         
         result = await collection.find_one_and_update(
@@ -361,6 +362,13 @@ class CaregiverService:
         if not result:
             raise ValueError(f"Caregiver not found: {caregiver_id}")
         
+        # Also update user's caregiver_id so both sides stay in sync
+        users_collection = self.db.get_collection("users")
+        await users_collection.update_one(
+            {"user_id": patient_id},
+            {"$set": {"caregiver_id": caregiver_id, "updated_at": datetime.utcnow()}}
+        )
+        
         result.pop('password', None)
         result.pop('profile_photo_binary', None)
         result['_id'] = str(result['_id'])
@@ -370,7 +378,8 @@ class CaregiverService:
         return result
     
     async def unlink_patient(self, caregiver_id: str, patient_id: str) -> Dict[str, Any]:
-        """Unlink a patient from a caregiver"""
+        """Unlink a patient from a caregiver.
+        Updates both sides: caregivers.patient_ids and users.caregiver_id"""
         collection = await self._get_collection()
         
         result = await collection.find_one_and_update(
@@ -384,6 +393,13 @@ class CaregiverService:
         
         if not result:
             raise ValueError(f"Caregiver not found: {caregiver_id}")
+        
+        # Also clear user's caregiver_id so both sides stay in sync
+        users_collection = self.db.get_collection("users")
+        await users_collection.update_one(
+            {"user_id": patient_id, "caregiver_id": caregiver_id},
+            {"$set": {"caregiver_id": "", "updated_at": datetime.utcnow()}}
+        )
         
         result.pop('password', None)
         result.pop('profile_photo_binary', None)

@@ -4,9 +4,9 @@ Game API Routes
 Endpoints for game session processing, calibration, and history
 Compatible with teammate's async Database class
 """
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 import logging
 
 from src.parsers.game_schemas import (
@@ -21,41 +21,98 @@ from src.parsers.game_schemas import (
 from src.services.game_service import process_game_session
 from src.features.game.cognitive_scoring import compute_motor_baseline
 from src.database import Database  # Use teammate's Database class
+from src.routes.user_routes import get_current_user
+from src.routes.caregiver_routes import get_current_caregiver
 
 router = APIRouter(prefix="/game", tags=["Game"])
 logger = logging.getLogger(__name__)
 
 # ============================================================================
+# Helper: Look up assigned caregiver ID for a user
+# ============================================================================
+async def lookup_caregiver_id_for_user(userId: str) -> Optional[str]:
+    """
+    Get the caregiver_id assigned to a user by reading it directly from
+    the user's own document (users collection has caregiver_id field).
+    Returns the caregiver_id string or None if not found.
+    """
+    try:
+        users = Database.get_collection("users")
+        user_doc = await users.find_one({"user_id": userId}, {"caregiver_id": 1})
+        if user_doc:
+            return user_doc.get("caregiver_id") or None
+    except Exception as e:
+        logger.warning(f"Could not look up caregiver for user {userId}: {e}")
+    return None
+
+
+async def verify_caregiver_linked(caregiver_id: str, user_id: str):
+    """
+    Raise 403 if the caregiver does not have user_id in their patient_ids.
+    """
+    caregivers = Database.get_collection("caregivers")
+    caregiver = await caregivers.find_one(
+        {"caregiver_id": caregiver_id, "patient_ids": user_id},
+        {"caregiver_id": 1}
+    )
+    if not caregiver:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Access denied: user {user_id} is not linked to your caregiver account"
+        )
+
+
+# ============================================================================
 # POST /game/session - Process Game Session
 # ============================================================================
 @router.post("/session", response_model=GameSessionResponse, status_code=status.HTTP_201_CREATED)
-async def submit_game_session(request: GameSessionRequest):
+async def submit_game_session(
+    request: GameSessionRequest,
+    current_user: dict = Depends(get_current_user)
+):
     """
     Process a completed game session and return risk assessment.
-    
+    Requires a valid user JWT token (Authorization: Bearer <token>).
+    The userId is taken from the token — not from the request body.
+
     **Workflow:**
-    1. Load user's motor baseline
-    2. Compute cognitive features (SAC, IES, motor-adjusted RT)
-    3. Fetch last N sessions for temporal analysis
-    4. Run LSTM model for decline detection
-    5. Run risk classifier for risk level
-    6. Store results in database
-    7. Return features + risk prediction
-    
+    1. Extract real userId from JWT token
+    2. Load user's motor baseline
+    3. Compute cognitive features (SAC, IES, motor-adjusted RT)
+    4. Fetch last N sessions for temporal analysis
+    5. Run LSTM model for decline detection
+    6. Run risk classifier for risk level
+    7. Store results in database (with caregiverId)
+    8. Return features + risk prediction
+
     **Input:**
     - `trials`: List of trial-level data (preferred) OR
     - `summary`: Aggregated session metrics (fallback)
-    
+    - `caregiverId`: Optional — auto-looked-up from DB if not provided
+
     **Output:**
     - Session features (SAC, IES, accuracy, etc.)
     - Risk prediction (LOW/MEDIUM/HIGH + probabilities)
     """
     try:
+        # Always use the authenticated user's ID from the JWT token
+        user_id = current_user["user_id"]
+        logger.info(f"Game session from authenticated user: {user_id}")
+
+        # Resolve caregiverId: use provided value or look up from DB
+        caregiver_id = request.caregiverId
+        if not caregiver_id:
+            caregiver_id = await lookup_caregiver_id_for_user(user_id)
+            if caregiver_id:
+                logger.info(f"Auto-resolved caregiverId={caregiver_id} for userId={user_id}")
+            else:
+                logger.warning(f"No caregiver found for userId={user_id}")
+
         # Convert trials to dict if provided
         trials = None
         if request.trials is not None and len(request.trials) > 0:
             trials = [t.model_dump(by_alias=False) for t in request.trials]
-            
+
             # AUTO-FIX: Convert milliseconds to seconds if RT values are too large
             # Expected RT: 0.5-3.0 seconds. If RT > 10, assume it's in milliseconds
             if trials and any(t.get('rt_raw', 0) > 10 for t in trials):
@@ -64,12 +121,12 @@ async def submit_game_session(request: GameSessionRequest):
                     if t.get('rt_raw', 0) > 10:
                         t['rt_raw'] = t['rt_raw'] / 1000.0
                 logger.info(f"✓ Converted RT from ms to seconds: {[t['rt_raw'] for t in trials[:3]]}")
-        
+
         # Convert summary to dict if provided
         summary = None
         if request.summary is not None:
             summary = request.summary.model_dump()
-            
+
             # AUTO-FIX: Convert milliseconds to seconds for summary too
             if summary.get('meanRtRaw', 0) > 10:
                 logger.warning(f"⚠️ Mean RT appears to be in milliseconds ({summary['meanRtRaw']}), converting to seconds")
@@ -77,19 +134,20 @@ async def submit_game_session(request: GameSessionRequest):
                 if summary.get('medianRtRaw'):
                     summary['medianRtRaw'] = summary['medianRtRaw'] / 1000.0
                 logger.info(f"✓ Converted mean RT: {summary['meanRtRaw']:.3f}s")
-        
-        # Process session (ASYNC)
+
+        # Process session (ASYNC) — userId from JWT, not request body
         result = await process_game_session(
-            userId=request.userId,
+            userId=user_id,
+            caregiverId=caregiver_id,
             sessionId=request.sessionId,
             gameType=request.gameType,
             level=request.level,
             trials=trials,
             summary=summary
         )
-        
+
         return result
-        
+
     except ValueError as e:
         logger.error(f"Validation error: {e}")
         raise HTTPException(status_code=400, detail=str(e))

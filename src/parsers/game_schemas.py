@@ -38,11 +38,12 @@ class GameSessionRequest(BaseModel):
     - summary (fallback, less precise)
     """
     userId: str = Field(..., min_length=1)
+    caregiverId: Optional[str] = Field(None, description="Caregiver ID assigned to this user. If omitted, looked up automatically from the database.")
     sessionId: str = Field(..., min_length=1)
     gameType: str = Field(default="card_matching")
     level: int = Field(default=1, ge=1, le=10)
     timestamp: Optional[datetime] = None
-    
+
     # One of these must be provided
     trials: Optional[List[GameTrial]] = None
     summary: Optional[GameSummary] = None

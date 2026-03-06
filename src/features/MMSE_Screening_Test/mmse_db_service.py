@@ -36,8 +36,13 @@ class MMSEDatabaseService:
     # Assessment lifecycle
     # ----------------------------
     async def create_assessment(self, user_id: str) -> str:
+        # Look up the user's assigned caregiver_id
+        user_doc = await self.users.find_one({"user_id": user_id}, {"caregiver_id": 1})
+        caregiver_id = (user_doc or {}).get("caregiver_id", "") if user_doc else ""
+
         doc = {
             "user_id": user_id,
+            "caregiver_id": caregiver_id,
             "assessment_type": "MMSE",
             "assessment_date": datetime.utcnow(),
             "questions": [],
@@ -120,12 +125,17 @@ class MMSEDatabaseService:
         self, caregiver_id: str
     ) -> List[Dict[str, Any]]:
 
+        # Primary: get patient_ids from caregivers collection
         caregiver = await self.caregivers.find_one({"caregiver_id": caregiver_id})
+        patient_ids = set(caregiver.get("patient_ids", [])) if caregiver else set()
 
-        if not caregiver:
-            return []
-
-        patient_ids = caregiver.get("patient_ids", [])
+        # Fallback: also include users who have caregiver_id set directly
+        cursor = self.users.find(
+            {"caregiver_id": caregiver_id, "role": "user"},
+            {"user_id": 1}
+        )
+        async for u in cursor:
+            patient_ids.add(u["user_id"])
 
         patients_data = []
 
