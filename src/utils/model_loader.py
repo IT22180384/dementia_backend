@@ -126,7 +126,7 @@ class ModelLoader:
         try:
             from huggingface_hub import hf_hub_download
 
-            repo_id = model_info["file_path"]  # e.g., "susadi/dementia_bert_xgboost_model"
+            repo_id = model_info["file_path"]  # e.g., "VindiO/dementia-reminder-system"
             model_id = model_info["id"]
 
             logger.info(f"Loading model from Hugging Face: {repo_id}")
@@ -134,12 +134,13 @@ class ModelLoader:
             # Determine file type and load accordingly
             model_type = model_info.get("type", "").lower()
 
-            # For pickle/joblib models (XGBoost, scikit-learn)
-            if "xgboost" in model_type or "classifier" in model_type:
+            # For pickle/joblib models (XGBoost, scikit-learn, reminder system)
+            if "xgboost" in model_type or "classifier" in model_type or "regressor" in model_type:
                 import joblib
 
-                # Download main model file
-                model_filename = self._infer_model_filename(model_info)
+                # Use explicit hf_filename if provided (e.g. subfolder files in shared repo),
+                # otherwise fall back to inference
+                model_filename = model_info.get("hf_filename") or self._infer_model_filename(model_info)
                 model_path = hf_hub_download(
                     repo_id=repo_id,
                     filename=model_filename

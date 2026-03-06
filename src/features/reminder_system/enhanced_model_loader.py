@@ -25,6 +25,23 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+HF_REPO_ID = "VindiO/dementia-reminder-system"
+
+
+def _hf_load(filename: str):
+    """Download a joblib file from HuggingFace and load it."""
+    from huggingface_hub import hf_hub_download
+    path = hf_hub_download(repo_id=HF_REPO_ID, filename=filename)
+    return joblib.load(path)
+
+
+def _hf_load_json(filename: str) -> dict:
+    """Download a JSON file from HuggingFace and return parsed content."""
+    from huggingface_hub import hf_hub_download
+    path = hf_hub_download(repo_id=HF_REPO_ID, filename=filename)
+    with open(path, "r") as f:
+        return json.load(f)
+
 
 class EnhancedModelLoader:
     """Loads Pitt Corpus-trained models for cognitive risk assessment."""
@@ -72,67 +89,89 @@ class EnhancedModelLoader:
         self._load_models()
         
     def _load_models(self):
-        """Load all Pitt-trained models."""
+        """Load all Pitt-trained models — local first, HuggingFace fallback."""
         # Load dementia risk model (models/improved/)
         try:
             model_path = self.models_dir / 'best_model_gradient_boosting.joblib'
             if model_path.exists():
                 self.model = joblib.load(model_path)
-                logger.info("[SUCCESS] Loaded Pitt-trained Gradient Boosting model (dementia risk)")
             else:
-                raise FileNotFoundError(f"Model not found: {model_path}")
-            
+                logger.info("[HF] Downloading best_model_gradient_boosting.joblib from HuggingFace...")
+                self.model = _hf_load("best_model_gradient_boosting.joblib")
+            logger.info("[SUCCESS] Loaded Pitt-trained Gradient Boosting model (dementia risk)")
+
             scaler_path = self.models_dir / 'scaler.joblib'
             if scaler_path.exists():
                 self.scaler = joblib.load(scaler_path)
-            
+            else:
+                self.scaler = _hf_load("scaler.joblib")
+
             selector_path = self.models_dir / 'feature_selector.joblib'
             if selector_path.exists():
                 self.feature_selector = joblib.load(selector_path)
-            
+            else:
+                self.feature_selector = _hf_load("feature_selector.joblib")
+
             metadata_path = self.models_dir / 'training_results.json'
             if metadata_path.exists():
                 with open(metadata_path, 'r') as f:
                     self.metadata = json.load(f)
-                
+            else:
+                self.metadata = _hf_load_json("training_results.json")
+
             logger.info(f"[INFO] Dementia risk model: AUC={self.metadata.get('test_auc', 'unknown')}")
-            
+
         except Exception as e:
             logger.error(f"Error loading dementia risk model: {e}", exc_info=True)
             raise
-        
-        # Load reminder system models (models/reminder_system/)
+
+        # Load reminder system models (models/reminder_system/ or HuggingFace)
         try:
             confusion_path = self.reminder_models_dir / 'confusion_detection_model.joblib'
             if confusion_path.exists():
                 self.confusion_model = joblib.load(confusion_path)
-                logger.info("[SUCCESS] Loaded confusion detection model")
-            
+            else:
+                logger.info("[HF] Downloading confusion_detection_model.joblib from HuggingFace...")
+                self.confusion_model = _hf_load("confusion_detection_model.joblib")
+            logger.info("[SUCCESS] Loaded confusion detection model")
+
             alert_path = self.reminder_models_dir / 'caregiver_alert_model.joblib'
             if alert_path.exists():
                 self.alert_model = joblib.load(alert_path)
-                logger.info("[SUCCESS] Loaded caregiver alert model")
-            
+            else:
+                logger.info("[HF] Downloading caregiver_alert_model.joblib from HuggingFace...")
+                self.alert_model = _hf_load("caregiver_alert_model.joblib")
+            logger.info("[SUCCESS] Loaded caregiver alert model")
+
             severity_path = self.reminder_models_dir / 'severity_classifier_model.joblib'
             if severity_path.exists():
                 self.severity_model = joblib.load(severity_path)
-                logger.info("[SUCCESS] Loaded severity classifier model")
+            else:
+                logger.info("[HF] Downloading severity_classifier_model.joblib from HuggingFace...")
+                self.severity_model = _hf_load("severity_classifier_model.joblib")
+            logger.info("[SUCCESS] Loaded severity classifier model")
             
             scaler_path = self.reminder_models_dir / 'feature_scaler.joblib'
             if scaler_path.exists():
                 self.reminder_scaler = joblib.load(scaler_path)
-            
+            else:
+                self.reminder_scaler = _hf_load("feature_scaler.joblib")
+
             # Load optimal decision thresholds
             thresholds_path = self.reminder_models_dir / 'optimal_thresholds.json'
             if thresholds_path.exists():
                 with open(thresholds_path, 'r') as f:
                     self.optimal_thresholds = json.load(f)
-                logger.info(f"[INFO] Optimal thresholds loaded: {self.optimal_thresholds}")
-            
+            else:
+                self.optimal_thresholds = _hf_load_json("optimal_thresholds.json")
+            logger.info(f"[INFO] Optimal thresholds loaded: {self.optimal_thresholds}")
+
             metadata_path = self.reminder_models_dir / 'training_metadata.json'
             if metadata_path.exists():
                 with open(metadata_path, 'r') as f:
                     self.reminder_metadata = json.load(f)
+            else:
+                self.reminder_metadata = _hf_load_json("training_metadata.json")
             
             loaded = []
             if self.confusion_model: loaded.append('confusion_detection')
