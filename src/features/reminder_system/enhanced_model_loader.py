@@ -552,6 +552,93 @@ class EnhancedModelLoader:
         is_confused = confusion_score >= 0.4
         return is_confused, min(1.0, confusion_score)
     
+    def get_final_score(self, text: str) -> Dict[str, Any]:
+        """
+        Combine all 4 reminder system models into one final cognitive risk score.
+
+        Weighted formula
+        ----------------
+        final_score = (dementia_risk  * 0.40)   -- primary dementia signal
+                    + (confusion_prob * 0.30)   -- in-session confusion
+                    + (alert_prob    * 0.20)   -- caregiver alert probability
+                    + (severity_num  * 0.10)   -- severity weight
+
+        severity mapping → numeric:  normal=0.0 | mild_concern=0.5 | high_risk=1.0
+
+        Risk levels
+        -----------
+        0.00 – 0.30  →  LOW      (no concern)
+        0.30 – 0.55  →  MODERATE (monitor closely)
+        0.55 – 0.75  →  HIGH     (intervention recommended)
+        0.75 – 1.00  →  CRITICAL (immediate caregiver alert)
+
+        Returns
+        -------
+        dict with keys:
+            final_score       float  0.0 – 1.0
+            risk_level        str    LOW | MODERATE | HIGH | CRITICAL
+            alert_caregiver   bool
+            components        dict   per-model scores
+            recommendation    str    human-readable action
+        """
+        # --- run all 4 models ---
+        dementia_prob, _    = self.predict_cognitive_risk(text)
+        confused, conf_prob = self.predict_confusion_detection(text)
+        alert, alert_prob   = self.predict_caregiver_alert(text)
+        severity, sev_conf  = self.predict_severity(text)
+
+        # Get raw positive-class probability from confusion model directly
+        # (conf_prob = max(probabilities) which doesn't reflect confusion magnitude)
+        if self.confusion_model is not None:
+            X = self._get_reminder_features_raw(text)
+            raw_probs = self.confusion_model.predict_proba(X)[0]
+            confusion_prob = float(raw_probs[1])   # probability of class 1 = confused
+        else:
+            confusion_prob = conf_prob if confused else (1.0 - conf_prob)
+
+        severity_num = {"normal": 0.0, "mild_concern": 0.5, "high_risk": 1.0}.get(severity, 0.0)
+
+        # --- weighted combination ---
+        # dementia_risk is the strongest signal (GB model, AUC 0.913)
+        final_score = (
+            dementia_prob  * 0.50
+            + confusion_prob * 0.25
+            + alert_prob     * 0.15
+            + severity_num   * 0.10
+        )
+        final_score = round(max(0.0, min(1.0, final_score)), 4)
+
+        # --- risk level ---
+        if final_score < 0.10:
+            risk_level = "LOW"
+            recommendation = "Patient responding normally. Continue standard reminder schedule."
+        elif final_score < 0.20:
+            risk_level = "MODERATE"
+            recommendation = "Some signs of confusion detected. Increase reminder frequency and monitor."
+        elif final_score < 0.35:
+            risk_level = "HIGH"
+            recommendation = "Significant cognitive difficulty detected. Simplify reminders and notify caregiver."
+        else:
+            risk_level = "CRITICAL"
+            recommendation = "Immediate caregiver alert recommended. Patient shows severe confusion or distress."
+
+        # caregiver alert fires if model says so OR if score is HIGH/CRITICAL
+        final_alert = alert or risk_level in ("HIGH", "CRITICAL")
+
+        return {
+            "final_score":     final_score,
+            "risk_level":      risk_level,
+            "alert_caregiver": final_alert,
+            "recommendation":  recommendation,
+            "components": {
+                "dementia_risk":    round(dementia_prob,   4),   # weight 40 %
+                "confusion_prob":   round(confusion_prob,  4),   # weight 30 %
+                "alert_prob":       round(alert_prob,      4),   # weight 20 %
+                "severity":         severity,                     # weight 10 %
+                "severity_numeric": severity_num,
+            },
+        }
+
     def get_model_info(self) -> Dict[str, Any]:
         """Get information about all loaded models."""
         models_loaded = ['cognitive_risk']

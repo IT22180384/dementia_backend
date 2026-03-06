@@ -1,88 +1,36 @@
 {
-  "last_updated": "2026-03-06T00:00:00.000000",
+  "last_updated": "2026-03-06T11:00:00.000000",
   "total_models": 9,
   "models": [
     {
       "id": "confusion_detection",
       "name": "Confusion Detection Model",
       "type": "Binary Classifier",
-      "algorithm": "Unknown (joblib not available)",
-      "purpose": "Detects confusion in patient responses",
-      "file_path": "models/reminder_system/confusion_detection_model.joblib",
-      "file_size_mb": 0.1,
-      "has_scaler": true,
-      "training_date": "2025-12-23T01:33:35.280740",
+      "algorithm": "Random Forest (imblearn Pipeline)",
+      "purpose": "Detects confusion in patient responses during dementia care reminders",
+      "model_source": "huggingface",
+      "file_path": "VindiO/dementia-reminder-system",
+      "hf_filename": "confusion_detection_model.joblib",
+      "huggingface_url": "https://huggingface.co/VindiO/dementia-reminder-system",
+      "training_date": "2026-03-05T16:41:19.535790",
       "dataset_info": {
-        "total_samples": 3289,
-        "synthetic_samples": 2000,
+        "total_samples": 1289,
+        "synthetic_samples": 0,
         "pitt_samples": 1289,
-        "data_sources": [
-          "synthetic",
-          "pitt_corpus"
-        ]
+        "train_samples": 1031,
+        "test_samples": 258,
+        "data_sources": ["pitt_corpus"],
+        "synthetic_data_used": false
       },
       "metrics": {
-        "best_score": 1.0,
-        "algorithm_results": {
-          "random_forest": {
-            "cv_score_mean": 1.0,
-            "cv_score_std": 0.0,
-            "test_score": 1.0
-          },
-          "gradient_boosting": {
-            "cv_score_mean": 1.0,
-            "cv_score_std": 0.0,
-            "test_score": 1.0
-          },
-          "logistic_regression": {
-            "cv_score_mean": 1.0,
-            "cv_score_std": 0.0,
-            "test_score": 1.0
-          }
-        },
-        "feature_count": 18
-      },
-      "category": "Reminder System"
-    },
-    {
-      "id": "cognitive_risk",
-      "name": "Cognitive Risk Assessment Model",
-      "type": "Regressor",
-      "algorithm": "Unknown (joblib not available)",
-      "purpose": "Predicts cognitive risk score (0-1)",
-      "file_path": "models/reminder_system/cognitive_risk_model.joblib",
-      "file_size_mb": 0.0,
-      "has_scaler": true,
-      "training_date": "2025-12-23T01:33:35.280740",
-      "dataset_info": {
-        "total_samples": 3289,
-        "synthetic_samples": 2000,
-        "pitt_samples": 1289,
-        "data_sources": [
-          "synthetic",
-          "pitt_corpus"
-        ]
-      },
-      "metrics": {
-        "best_score": 1.0,
-        "algorithm_results": {
-          "random_forest": {
-            "cv_score_mean": 0.9999832787416836,
-            "cv_score_std": 3.084128009977469e-05,
-            "test_score": 0.9999989224053939
-          },
-          "gradient_boosting": {
-            "cv_score_mean": 0.9999661925178656,
-            "cv_score_std": 5.513864769441346e-05,
-            "test_score": 0.9999939980847837
-          },
-          "linear_regression": {
-            "cv_score_mean": 1.0,
-            "cv_score_std": 0.0,
-            "test_score": 1.0
-          }
-        },
-        "feature_count": 18
+        "test_accuracy": 0.9651,
+        "test_auc": 0.9637,
+        "test_f1": 0.6087,
+        "test_precision": 0.5385,
+        "test_recall": 0.7,
+        "optimal_threshold": 0.3981,
+        "cv_folds": 5,
+        "feature_count": 17
       },
       "category": "Reminder System"
     },
@@ -90,83 +38,95 @@
       "id": "caregiver_alert",
       "name": "Caregiver Alert Model",
       "type": "Binary Classifier",
-      "algorithm": "Unknown (joblib not available)",
-      "purpose": "Determines if caregiver needs to be alerted",
-      "file_path": "models/reminder_system/caregiver_alert_model.joblib",
-      "file_size_mb": 0.1,
-      "has_scaler": true,
-      "training_date": "2025-12-23T01:33:35.280740",
+      "algorithm": "Random Forest (imblearn Pipeline)",
+      "purpose": "Determines if caregiver needs to be alerted based on patient response",
+      "model_source": "huggingface",
+      "file_path": "VindiO/dementia-reminder-system",
+      "hf_filename": "caregiver_alert_model.joblib",
+      "huggingface_url": "https://huggingface.co/VindiO/dementia-reminder-system",
+      "training_date": "2026-03-05T16:41:19.535790",
       "dataset_info": {
-        "total_samples": 3289,
-        "synthetic_samples": 2000,
+        "total_samples": 1289,
+        "synthetic_samples": 0,
         "pitt_samples": 1289,
-        "data_sources": [
-          "synthetic",
-          "pitt_corpus"
-        ]
+        "train_samples": 1031,
+        "test_samples": 258,
+        "data_sources": ["pitt_corpus"],
+        "synthetic_data_used": false
       },
       "metrics": {
-        "best_score": 1.0,
-        "algorithm_results": {
-          "random_forest": {
-            "cv_score_mean": 1.0,
-            "cv_score_std": 0.0,
-            "test_score": 1.0
-          },
-          "gradient_boosting": {
-            "cv_score_mean": 1.0,
-            "cv_score_std": 0.0,
-            "test_score": 1.0
-          },
-          "logistic_regression": {
-            "cv_score_mean": 1.0,
-            "cv_score_std": 0.0,
-            "test_score": 1.0
-          }
-        },
-        "feature_count": 18
+        "optimal_threshold": 0.9633,
+        "cv_folds": 5,
+        "feature_count": 17
       },
       "category": "Reminder System"
     },
     {
-      "id": "response_classifier",
-      "name": "Response Classifier Model",
+      "id": "severity_classifier",
+      "name": "Severity Classifier Model",
       "type": "Multi-class Classifier",
-      "algorithm": "Unknown (joblib not available)",
-      "purpose": "Classifies patient response type (5 classes)",
-      "file_path": "models/reminder_system/response_classifier_model.joblib",
-      "file_size_mb": 0.48,
-      "has_scaler": true,
-      "training_date": "2025-12-23T01:33:35.280740",
+      "algorithm": "Random Forest (imblearn Pipeline)",
+      "purpose": "Classifies alert severity level (normal / mild / severe) for dementia patient responses",
+      "model_source": "huggingface",
+      "file_path": "VindiO/dementia-reminder-system",
+      "hf_filename": "severity_classifier_model.joblib",
+      "hf_encoder_filename": "severity_classifier_encoder.joblib",
+      "huggingface_url": "https://huggingface.co/VindiO/dementia-reminder-system",
+      "training_date": "2026-03-05T16:41:19.535790",
       "dataset_info": {
-        "total_samples": 3289,
-        "synthetic_samples": 2000,
+        "total_samples": 1289,
+        "synthetic_samples": 0,
         "pitt_samples": 1289,
-        "data_sources": [
-          "synthetic",
-          "pitt_corpus"
-        ]
+        "train_samples": 1031,
+        "test_samples": 258,
+        "data_sources": ["pitt_corpus"],
+        "synthetic_data_used": false
       },
       "metrics": {
-        "best_score": 1.0,
-        "algorithm_results": {
-          "random_forest": {
-            "cv_score_mean": 0.9988593155893536,
-            "cv_score_std": 0.0015209125475285246,
-            "test_score": 0.9969604863221885
-          },
-          "gradient_boosting": {
-            "cv_score_mean": 1.0,
-            "cv_score_std": 0.0,
-            "test_score": 1.0
-          },
-          "logistic_regression": {
-            "cv_score_mean": 0.9981003023066212,
-            "cv_score_std": 0.0024036345633334185,
-            "test_score": 0.9984802431610942
-          }
-        },
-        "feature_count": 18
+        "cv_folds": 5,
+        "feature_count": 17,
+        "output_classes": ["normal", "mild", "severe"]
+      },
+      "category": "Reminder System"
+    },
+    {
+      "id": "dementia_risk_gb",
+      "name": "Dementia Risk Gradient Boosting Model",
+      "type": "Binary Classifier",
+      "algorithm": "Gradient Boosting",
+      "purpose": "Primary dementia detection — predicts dementia risk score from linguistic features",
+      "model_source": "huggingface",
+      "file_path": "VindiO/dementia-reminder-system",
+      "hf_filename": "best_model_gradient_boosting.joblib",
+      "hf_scaler_filename": "scaler.joblib",
+      "hf_selector_filename": "feature_selector.joblib",
+      "huggingface_url": "https://huggingface.co/VindiO/dementia-reminder-system",
+      "training_date": "2026-03-05T16:41:19.535790",
+      "dataset_info": {
+        "total_samples": 1289,
+        "synthetic_samples": 0,
+        "pitt_samples": 1289,
+        "train_samples": 1031,
+        "test_samples": 258,
+        "control_samples": 247,
+        "dementia_samples": 1042,
+        "data_sources": ["pitt_corpus"],
+        "synthetic_data_used": false
+      },
+      "metrics": {
+        "test_accuracy": 0.8605,
+        "test_auc": 0.9130,
+        "test_f1": 0.9130,
+        "test_precision": 0.9220,
+        "test_recall": 0.9043,
+        "cv_f1_mean": 0.9298,
+        "cv_folds": 5,
+        "feature_count": 17,
+        "selected_features": [
+          "sentence_count", "avg_words_per_sentence", "avg_word_length",
+          "noun_ratio", "verb_ratio", "hesitation_count", "self_corrections",
+          "task_completion", "connective_density", "semantic_density"
+        ]
       },
       "category": "Reminder System"
     },
