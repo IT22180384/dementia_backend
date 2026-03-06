@@ -296,25 +296,64 @@ class WhisperService:
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
+        converted_wav_path = None
         try:
             logger.info(f"Transcribing audio: {audio_path}")
 
             # Load audio - use librosa if ffmpeg is not available
             if self.ffmpeg_available:
-                # Use Whisper's default audio loading (requires ffmpeg)
-                audio_input = audio_path
+                # Pre-convert to 16kHz mono WAV for best Whisper compatibility.
+                # This is critical for low-bitrate mobile formats like .3gp / .amr
+                # which Whisper can silently misread when passed raw.
+                converted_wav_path = audio_path + "_whisper_in.wav"
+                convert_result = subprocess.run(
+                    [
+                        "ffmpeg", "-y", "-i", audio_path,
+                        "-ar", "16000", "-ac", "1",
+                        "-c:a", "pcm_s16le",
+                        converted_wav_path
+                    ],
+                    capture_output=True,
+                    timeout=60
+                )
+                if convert_result.returncode == 0:
+                    audio_input = converted_wav_path
+                    logger.info("Audio converted to 16kHz mono WAV for Whisper")
+                else:
+                    logger.warning(
+                        f"ffmpeg conversion failed (rc={convert_result.returncode}), "
+                        f"using original file: {convert_result.stderr.decode()[-200:]}"
+                    )
+                    audio_input = audio_path
             else:
                 # Use librosa fallback
                 logger.info("Loading audio with librosa (ffmpeg not available)...")
                 audio_input = load_audio_librosa(audio_path)
 
-            # Transcribe
-            result = self.model.transcribe(
-                audio_input,
-                language=language,
-                task=task,
-                fp16=False  # Use FP32 for better compatibility
-            )
+            def _do_transcribe(lang):
+                return self.model.transcribe(
+                    audio_input,
+                    language=lang,
+                    task=task,
+                    fp16=False,  # Use FP32 for better compatibility
+                    initial_prompt="reminder appointment medicine",
+                    condition_on_previous_text=False,
+                    temperature=0.0,
+                )
+
+            # First pass: auto-detect language
+            result = _do_transcribe(language)
+
+            # Whisper sometimes returns only hallucinated dots/music tokens for
+            # very quiet or low-quality audio. Detect and retry with forced English.
+            _noise_pattern = {"...", "[ Music ]", "[Music]", "(Music)", "....", "....."}
+            raw_text = result["text"].strip()
+            if not raw_text or raw_text in _noise_pattern or all(c in ". \t\n" for c in raw_text):
+                logger.warning(
+                    f"First-pass transcription looks like noise ('{raw_text}'). "
+                    "Retrying with forced English..."
+                )
+                result = _do_transcribe("en")
 
             # Calculate average confidence from segments
             segments = result.get("segments", [])
@@ -346,12 +385,18 @@ class WhisperService:
                 ]
             }
 
-            logger.info(f"[SUCCESS] Transcription complete: '{transcription_result['text'][:50]}...'")
+            logger.info(f"[SUCCESS] Transcription complete: '{transcription_result['text'][:50]}'")
             return transcription_result
 
         except Exception as e:
             logger.error(f"Error transcribing audio: {e}")
             raise
+        finally:
+            if converted_wav_path and os.path.exists(converted_wav_path):
+                try:
+                    os.remove(converted_wav_path)
+                except OSError:
+                    pass
 
     def transcribe_from_bytes(
         self,

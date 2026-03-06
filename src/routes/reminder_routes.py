@@ -404,11 +404,18 @@ async def create_reminder_from_audio(
             
             transcribed_text = transcription_result["text"]
             logger.info(f"✅ Transcription: '{transcribed_text}'")
-            
-            if not transcribed_text.strip():
+
+            # Reject empty or hallucinated-noise-only outputs from Whisper
+            _stripped = transcribed_text.strip()
+            _is_noise = not _stripped or all(c in ". \t\n" for c in _stripped)
+            if _is_noise:
                 raise HTTPException(
                     status_code=400,
-                    detail="Could not transcribe audio. Please ensure clear speech."
+                    detail=(
+                        "Could not transcribe audio. "
+                        "Please speak clearly and ensure your microphone is working. "
+                        "Try recording in a quieter environment."
+                    )
                 )
             
             # Step 2: Parse reminder details using NLP
@@ -1159,36 +1166,280 @@ async def get_weekly_report(
                     detail="Invalid end_date format. Use ISO 8601 format (YYYY-MM-DDTHH:MM:SS)"
                 )
         else:
-            end_dt = None
-        
-        # Generate report
-        report = report_generator.generate_weekly_report(
-            user_id=user_id,
-            end_date=end_dt
+            end_dt = datetime.now()
+
+        start_dt = end_dt - timedelta(days=7)
+
+        # ----- Query reminders from MongoDB directly -----
+        from src.database import Database
+        reminders_col = Database.get_collection("reminders")
+
+        query = {"user_id": user_id}
+        cursor = reminders_col.find(query)
+        all_reminders = await cursor.to_list(length=5000)
+
+        # Partition into current week and previous week
+        week_reminders = []
+        prev_week_reminders = []
+        prev_start = start_dt - timedelta(days=7)
+
+        for r in all_reminders:
+            created = r.get("created_at") or r.get("scheduled_time")
+            if created is None:
+                continue
+            if isinstance(created, str):
+                try:
+                    created = datetime.fromisoformat(created)
+                except (ValueError, TypeError):
+                    continue
+            if start_dt <= created <= end_dt:
+                week_reminders.append(r)
+            elif prev_start <= created < start_dt:
+                prev_week_reminders.append(r)
+
+        total = len(week_reminders)
+
+        # Status counts
+        completed = sum(1 for r in week_reminders if r.get("status") == "completed")
+        missed = sum(1 for r in week_reminders if r.get("status") == "missed")
+        active = sum(1 for r in week_reminders if r.get("status") in ("active", "snoozed"))
+        acknowledged = sum(1 for r in week_reminders if r.get("status") == "acknowledged")
+        completion_rate = (completed + acknowledged) / total if total > 0 else 0
+
+        # Cognitive risk scores
+        risk_scores = [
+            r["cognitive_risk_score"]
+            for r in week_reminders
+            if r.get("cognitive_risk_score") is not None
+        ]
+        avg_risk = statistics.mean(risk_scores) if risk_scores else 0.0
+        peak_risk = max(risk_scores) if risk_scores else 0.0
+        lowest_risk = min(risk_scores) if risk_scores else 0.0
+
+        # Response times
+        response_times = [
+            r["response_time_seconds"]
+            for r in week_reminders
+            if r.get("response_time_seconds") is not None
+        ]
+        avg_response_time = statistics.mean(response_times) if response_times else 0.0
+
+        # Daily summaries
+        from collections import defaultdict as _defaultdict
+        daily_buckets = _defaultdict(list)
+        for r in week_reminders:
+            created = r.get("created_at") or r.get("scheduled_time")
+            if created is None:
+                continue
+            if isinstance(created, str):
+                try:
+                    created = datetime.fromisoformat(created)
+                except (ValueError, TypeError):
+                    continue
+            daily_buckets[created.date().isoformat()].append(r)
+
+        daily_summaries = []
+        current_date = start_dt.date()
+        while current_date <= end_dt.date():
+            date_key = current_date.isoformat()
+            day_items = daily_buckets.get(date_key, [])
+            day_risk = [
+                x["cognitive_risk_score"]
+                for x in day_items
+                if x.get("cognitive_risk_score") is not None
+            ]
+            day_completed = sum(
+                1 for x in day_items if x.get("status") in ("completed", "acknowledged")
+            )
+            daily_summaries.append({
+                "date": date_key,
+                "avg_cognitive_risk": statistics.mean(day_risk) if day_risk else 0.0,
+                "confusion_count": sum(
+                    1 for x in day_items
+                    if x.get("user_response", "").lower().find("confus") >= 0
+                ),
+                "total_interactions": len(day_items),
+                "completion_rate": day_completed / len(day_items) if day_items else 0.0,
+                "alert_count": sum(
+                    1 for x in day_items if x.get("notify_caregiver_on_miss") and x.get("status") == "missed"
+                ),
+            })
+            current_date += timedelta(days=1)
+
+        # Hour-of-day analysis
+        hour_performance = _defaultdict(lambda: {"total": 0, "completed": 0})
+        for r in week_reminders:
+            sched = r.get("scheduled_time")
+            if sched is None:
+                continue
+            if isinstance(sched, str):
+                try:
+                    sched = datetime.fromisoformat(sched)
+                except (ValueError, TypeError):
+                    continue
+            h = sched.hour
+            hour_performance[h]["total"] += 1
+            if r.get("status") in ("completed", "acknowledged"):
+                hour_performance[h]["completed"] += 1
+
+        sorted_hours = sorted(
+            hour_performance.items(),
+            key=lambda x: x[1]["completed"] / x[1]["total"] if x[1]["total"] else 0,
+            reverse=True,
         )
-        
-        # Export to file if requested
-        if format == "pdf":
-            output_path = f"reports/weekly_{user_id}_{datetime.now().strftime('%Y%m%d')}.pdf"
-            report_generator.export_report_to_pdf(report, output_path)
-            return {
-                "status": "success",
-                "message": "PDF report generated",
-                "file_path": output_path,
-                "report_summary": {
-                    "user_id": report.user_id,
-                    "period": f"{report.report_period_start} to {report.report_period_end}",
-                    "risk_level": report.risk_level,
-                    "intervention_needed": report.intervention_needed
-                }
+        best_hours = [h for h, _ in sorted_hours[:3]] if sorted_hours else []
+        worst_hours = [h for h, _ in sorted_hours[-3:]] if sorted_hours else []
+
+        # Category breakdown
+        cat_buckets = _defaultdict(lambda: {"total": 0, "completed": 0, "risk": []})
+        for r in week_reminders:
+            cat = r.get("category", "general")
+            cat_buckets[cat]["total"] += 1
+            if r.get("status") in ("completed", "acknowledged"):
+                cat_buckets[cat]["completed"] += 1
+            if r.get("cognitive_risk_score") is not None:
+                cat_buckets[cat]["risk"].append(r["cognitive_risk_score"])
+
+        category_breakdown = {}
+        for cat, data in cat_buckets.items():
+            category_breakdown[cat] = {
+                "total": data["total"],
+                "completed": data["completed"],
+                "completion_rate": data["completed"] / data["total"] if data["total"] else 0,
+                "avg_risk": statistics.mean(data["risk"]) if data["risk"] else 0.0,
             }
-        
-        # Return JSON report
-        return {
-            "status": "success",
-            "report": report.dict()
+
+        # Caregiver alerts from alerts collection
+        alerts_col = Database.get_collection("caregiver_alerts")
+        alert_query = {"user_id": user_id, "created_at": {"$gte": start_dt, "$lte": end_dt}}
+        alert_cursor = alerts_col.find(alert_query)
+        alerts = await alert_cursor.to_list(length=1000)
+        total_alerts = len(alerts)
+        critical_alerts = sum(1 for a in alerts if a.get("severity") == "critical")
+        high_alerts = sum(1 for a in alerts if a.get("severity") == "high")
+        unresolved_alerts = sum(1 for a in alerts if not a.get("is_resolved", False))
+
+        # Risk trend
+        active_days = [d for d in daily_summaries if d["total_interactions"] > 0]
+        if len(active_days) >= 3:
+            scores = [d["avg_cognitive_risk"] for d in active_days]
+            first_half = statistics.mean(scores[: len(scores) // 2])
+            second_half = statistics.mean(scores[len(scores) // 2 :])
+            if second_half < first_half - 0.05:
+                risk_trend = "improving"
+            elif second_half > first_half + 0.05:
+                risk_trend = "declining"
+            else:
+                risk_trend = "stable"
+        else:
+            risk_trend = "stable" if active_days else "insufficient_data"
+
+        # Previous week comparison
+        prev_risk = [
+            r["cognitive_risk_score"]
+            for r in prev_week_reminders
+            if r.get("cognitive_risk_score") is not None
+        ]
+        prev_avg_risk = statistics.mean(prev_risk) if prev_risk else None
+        risk_change = None
+        if prev_avg_risk is not None and prev_avg_risk > 0:
+            risk_change = round(((avg_risk - prev_avg_risk) / prev_avg_risk) * 100, 1)
+
+        # Risk level
+        if avg_risk >= 0.75:
+            risk_level = "critical"
+        elif avg_risk >= 0.6:
+            risk_level = "high"
+        elif avg_risk >= 0.4:
+            risk_level = "moderate"
+        elif total > 0:
+            risk_level = "low"
+        else:
+            risk_level = "unknown"
+
+        # Recommendations
+        recommendations = []
+        if completion_rate < 0.6 and total > 0:
+            recommendations.append(
+                "Low completion rate detected. Consider adjusting reminder frequency and timing."
+            )
+        if avg_risk > 0.7:
+            recommendations.append(
+                "High average cognitive risk. Recommend immediate medical evaluation."
+            )
+        elif avg_risk > 0.5:
+            recommendations.append(
+                "Elevated cognitive risk. Schedule follow-up with healthcare provider."
+            )
+        if risk_trend == "declining":
+            recommendations.append(
+                "Cognitive performance declining. Increase caregiver monitoring."
+            )
+        elif risk_trend == "improving":
+            recommendations.append(
+                "Cognitive performance improving. Continue current care plan."
+            )
+        if best_hours:
+            recommendations.append(
+                f"Best response hours: {', '.join(f'{h}:00' for h in best_hours)}. "
+                "Schedule important reminders during these times."
+            )
+        if unresolved_alerts > 3:
+            recommendations.append(
+                f"{unresolved_alerts} unresolved alerts require caregiver follow-up."
+            )
+        if not recommendations:
+            recommendations.append("Patient performance is stable. Continue current monitoring.")
+
+        intervention_needed = (
+            avg_risk > 0.6
+            or (risk_trend == "declining" and avg_risk > 0.4)
+            or (completion_rate < 0.5 and total > 0)
+            or unresolved_alerts > 2
+        )
+        escalation_required = avg_risk >= 0.75 or critical_alerts >= 3 or peak_risk >= 0.85
+
+        confusion_count = sum(1 for d in daily_summaries for _ in range(d["confusion_count"]))
+
+        report = {
+            "user_id": user_id,
+            "report_period_start": start_dt.isoformat(),
+            "report_period_end": end_dt.isoformat(),
+            "generated_at": datetime.now().isoformat(),
+            "total_reminders": total,
+            "completed_reminders": completed + acknowledged,
+            "missed_reminders": missed,
+            "active_reminders": active,
+            "completion_rate": round(completion_rate, 3),
+            "avg_cognitive_risk_score": round(avg_risk, 3),
+            "peak_cognitive_risk_score": round(peak_risk, 3),
+            "lowest_cognitive_risk_score": round(lowest_risk, 3),
+            "risk_trend": risk_trend,
+            "confusion_count": confusion_count,
+            "confirmed_count": completed + acknowledged,
+            "ignored_count": missed,
+            "delayed_count": sum(1 for r in week_reminders if r.get("status") == "snoozed"),
+            "daily_summaries": daily_summaries,
+            "total_alerts": total_alerts,
+            "critical_alerts": critical_alerts,
+            "high_priority_alerts": high_alerts,
+            "unresolved_alerts": unresolved_alerts,
+            "best_response_hours": best_hours,
+            "worst_response_hours": worst_hours,
+            "avg_response_time_seconds": round(avg_response_time, 1),
+            "category_breakdown": category_breakdown,
+            "risk_level": risk_level,
+            "recommendations": recommendations,
+            "intervention_needed": intervention_needed,
+            "escalation_required": escalation_required,
+            "previous_week_avg_risk": round(prev_avg_risk, 3) if prev_avg_risk is not None else None,
+            "risk_change_percentage": risk_change,
         }
-        
+
+        return {"status": "success", "report": report}
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error generating weekly report: {e}", exc_info=True)
         raise HTTPException(
@@ -1211,25 +1462,75 @@ async def get_weekly_report_summary(user_id: str):
     - **user_id**: Patient identifier
     """
     try:
-        report = report_generator.generate_weekly_report(user_id=user_id)
-        
+        from src.database import Database
+
+        end_dt = datetime.now()
+        start_dt = end_dt - timedelta(days=7)
+
+        reminders_col = Database.get_collection("reminders")
+        cursor = reminders_col.find({
+            "user_id": user_id,
+            "created_at": {"$gte": start_dt, "$lte": end_dt},
+        })
+        week_reminders = await cursor.to_list(length=5000)
+
+        total = len(week_reminders)
+        completed = sum(
+            1 for r in week_reminders if r.get("status") in ("completed", "acknowledged")
+        )
+        missed = sum(1 for r in week_reminders if r.get("status") == "missed")
+        completion_rate = completed / total if total > 0 else 0.0
+
+        risk_scores = [
+            r["cognitive_risk_score"]
+            for r in week_reminders
+            if r.get("cognitive_risk_score") is not None
+        ]
+        avg_risk = statistics.mean(risk_scores) if risk_scores else 0.0
+
+        if avg_risk >= 0.75:
+            risk_level = "critical"
+        elif avg_risk >= 0.6:
+            risk_level = "high"
+        elif avg_risk >= 0.4:
+            risk_level = "moderate"
+        elif total > 0:
+            risk_level = "low"
+        else:
+            risk_level = "unknown"
+
+        alerts_col = Database.get_collection("caregiver_alerts")
+        alert_count = await alerts_col.count_documents({
+            "user_id": user_id,
+            "created_at": {"$gte": start_dt, "$lte": end_dt},
+        })
+        critical_count = await alerts_col.count_documents({
+            "user_id": user_id,
+            "severity": "critical",
+            "created_at": {"$gte": start_dt, "$lte": end_dt},
+        })
+
+        intervention_needed = avg_risk > 0.6 or (completion_rate < 0.5 and total > 0)
+
         return {
             "status": "success",
             "summary": {
-                "user_id": report.user_id,
-                "period": f"{report.report_period_start} to {report.report_period_end}",
-                "risk_level": report.risk_level,
-                "avg_cognitive_risk": report.avg_cognitive_risk_score,
-                "risk_trend": report.risk_trend,
-                "completion_rate": report.completion_rate,
-                "total_alerts": report.total_alerts,
-                "critical_alerts": report.critical_alerts,
-                "intervention_needed": report.intervention_needed,
-                "escalation_required": report.escalation_required,
-                "top_recommendations": report.recommendations[:3]
+                "user_id": user_id,
+                "period": f"{start_dt.isoformat()} to {end_dt.isoformat()}",
+                "risk_level": risk_level,
+                "avg_cognitive_risk": round(avg_risk, 3),
+                "risk_trend": "stable",
+                "completion_rate": round(completion_rate, 3),
+                "total_reminders": total,
+                "completed": completed,
+                "missed": missed,
+                "total_alerts": alert_count,
+                "critical_alerts": critical_count,
+                "intervention_needed": intervention_needed,
+                "escalation_required": avg_risk >= 0.75 or critical_count >= 3,
             }
         }
-        
+
     except Exception as e:
         logger.error(f"Error generating report summary: {e}", exc_info=True)
         raise HTTPException(
