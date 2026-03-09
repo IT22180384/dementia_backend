@@ -19,9 +19,9 @@ def get_time_window_and_session(timestamp: datetime) -> Tuple[str, int]:
 
     1 day = 4 sessions:
     - Morning (6:00-11:59): Session 1
-    - Afternoon (12:00-15:59): Session 2
-    - Evening (16:00-19:59): Session 3
-    - Night (20:00-5:59): Session 4
+    - Afternoon (12:00-17:59): Session 2
+    - Evening (18:00-23:59): Session 3
+    - Night (0:00-5:59): Session 4
 
     Args:
         timestamp: Session timestamp
@@ -33,11 +33,11 @@ def get_time_window_and_session(timestamp: datetime) -> Tuple[str, int]:
 
     if 6 <= hour < 12:
         return "morning", 1
-    elif 12 <= hour < 16:
+    elif 12 <= hour < 18:
         return "afternoon", 2
-    elif 16 <= hour < 20:
+    elif 18 <= hour < 24:
         return "evening", 3
-    else:  # 20-23 or 0-5
+    else:  # 0-5
         return "night", 4
 
 
