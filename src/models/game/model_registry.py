@@ -219,7 +219,7 @@ def load_all_models():
         return
     
     logger.info("=" * 60)
-    logger.info("🔄 LOADING ML MODELS...")
+    logger.info(" LOADING ML MODELS...")
     logger.info("=" * 60)
     
     _MODELS["lstm_model"] = load_lstm_model()

@@ -293,27 +293,56 @@ class BehaviorTracker:
         self,
         interactions: List[ReminderInteraction]
     ) -> int:
-        """Calculate recommended time adjustment in minutes."""
-        if len(interactions) < 5:
+        """
+        Calculate recommended time adjustment in minutes.
+
+        Negative value = shift alarm EARLIER (e.g. -12 → move alarm 12 min early
+        so the user acts at the original scheduled time).
+        Positive value = shift alarm LATER.
+
+        Primary logic:
+          If average response delay across CONFIRMED/DELAYED interactions > 5 min,
+          shift the alarm earlier by that average so the user acts on time.
+          Example: alarm 8:00, user confirms at 8:12 on average → recommend -12
+          so alarm fires at 7:48 and user acts at ~8:00.
+
+        Fallback (when response_time_seconds not available):
+          If the same hour is IGNORED ≥3 times, suggest +30 min shift.
+        Requires at least 7 interactions (≈1 week of daily reminders).
+        """
+        if len(interactions) < 7:
             return 0
-        
-        # Analyze response patterns by time
-        ignored_times = [
+
+        # ── Primary: use measured response delays ──────────────────────────
+        response_delays = [
+            i.response_time_seconds for i in interactions
+            if i.response_time_seconds is not None
+            and i.interaction_type in (
+                InteractionType.CONFIRMED, InteractionType.DELAYED
+            )
+            and 0 <= i.response_time_seconds <= 3600  # ignore outliers >1 hour
+        ]
+
+        if len(response_delays) >= 5:
+            avg_delay_seconds = statistics.mean(response_delays)
+            avg_delay_minutes = avg_delay_seconds / 60
+
+            if avg_delay_minutes > 5:
+                # Shift alarm earlier so action lands at intended time
+                shift = -round(avg_delay_minutes)
+                return max(-60, shift)   # cap: never move more than 60 min early
+            return 0
+
+        # ── Fallback: ignored-hour heuristic ──────────────────────────────
+        ignored_hours = [
             i.interaction_time.hour for i in interactions
             if i.interaction_type == InteractionType.IGNORED
         ]
-        
-        if not ignored_times:
+        if not ignored_hours:
             return 0
-        
-        # If consistently ignored at certain hour, suggest shift
-        most_ignored_hour = max(set(ignored_times), key=ignored_times.count)
-        ignored_count = ignored_times.count(most_ignored_hour)
-        
-        if ignored_count >= 3:
-            # Suggest shifting by 30-60 minutes
+        most_ignored_hour = max(set(ignored_hours), key=ignored_hours.count)
+        if ignored_hours.count(most_ignored_hour) >= 3:
             return 30
-        
         return 0
     
     def _should_escalate(
