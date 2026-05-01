@@ -439,6 +439,15 @@ class DementiaChatbot:
         if context["asking_datetime"] and context["current_datetime"]:
             datetime_info = f"\n\nCURRENT DATE AND TIME: {context['current_datetime']}\n- The user is asking about the date or time. Provide this information clearly."
 
+        # Add extra guidance when confusion is specifically detected
+        confusion_guidance = ""
+        if context["confusion"]:
+            confusion_guidance = (
+                "\n- The user seems confused or disoriented. Acknowledge their feelings warmly,"
+                " stay grounded in the present moment, and gently suggest they speak with a"
+                " family member or caregiver who knows them well."
+            )
+
         base_prompt = """You are Hale, a friendly AI care companion for elderly individuals.
 
 CRITICAL RULES:{introduction}
@@ -451,7 +460,14 @@ CRITICAL RULES:{introduction}
 - If the user is emotional, respond with warmth and empathy in 2-3 short sentences.
 - If the user asks a question, give a brief helpful answer.
 - Use simple, clear language suitable for elderly users.
-- Be warm but concise.{datetime_info}
+- Be warm but concise.
+
+MEMORY RULES (always apply):
+- You have NO knowledge of this person's personal history, medical records, or any previous conversations outside of this current session.
+- Only reference information the user has told you during THIS conversation.
+- NEVER say things like "I remember you said", "last time we spoke", "as we discussed before", "I know you have", or any phrase implying prior knowledge you don't have.
+- NEVER claim to know the user's name, conditions, family, or past events unless they told you in this session.
+- If asked about something you don't know, say honestly: "I don't have that information — could you tell me more?"{confusion_guidance}{datetime_info}
 
 Context signals (for guidance only, not to be mentioned):
 - First message: {is_first_message}
@@ -466,6 +482,7 @@ Context signals (for guidance only, not to be mentioned):
         adaptive_prompt = base_prompt.format(
             introduction=introduction,
             datetime_info=datetime_info,
+            confusion_guidance=confusion_guidance,
             user_message=user_message,
             is_first_message="Yes" if context["is_first_message"] else "No",
             is_greeting="Yes" if context["is_greeting"] else "No",
@@ -560,7 +577,30 @@ Context signals (for guidance only, not to be mentioned):
             if last_period > 20:  # Only truncate if we have enough text
                 response = response[:last_period + 1]
 
-        # 7. If response is empty after cleaning, provide a fallback
+        # 7. Remove false memory claims — phrases that imply the bot remembers the user's past
+        false_memory_patterns = [
+            r"let'?s\s+try\s+to\s+remember\b[^.!?]*[.!?]?",
+            r"let\s+me\s+help\s+you\s+remember\b[^.!?]*[.!?]?",
+            r"i'?ll?\s+help\s+you\s+recall\b[^.!?]*[.!?]?",
+            r"do\s+you\s+remember\s+when\b[^.!?]*[.!?]?",
+            r"as\s+we\s+(discussed|talked\s+about)\s+before\b[^.!?]*[.!?]?",
+            r"last\s+time\s+you\s+told\s+me\b[^.!?]*[.!?]?",
+            r"i\s+remember\s+you\s+(said|told|mentioned)\b[^.!?]*[.!?]?",
+            r"we\s+(talked|spoke|chatted)\s+about\s+this\s+before\b[^.!?]*[.!?]?",
+            r"i\s+know\s+you\s+(have|had|are|were|suffer|suffer from)\b[^.!?]*[.!?]?",
+            r"based\s+on\s+(our\s+previous|your\s+history|what\s+you.ve\s+shared\s+before)\b[^.!?]*[.!?]?",
+            r"i\s+recall\s+(you|that\s+you)\b[^.!?]*[.!?]?",
+            r"from\s+(our\s+last|our\s+previous|your\s+last)\s+(session|conversation|chat)\b[^.!?]*[.!?]?",
+            r"as\s+i\s+(mentioned|said)\s+before\b[^.!?]*[.!?]?",
+            r"you\s+(previously|already)\s+told\s+me\b[^.!?]*[.!?]?",
+        ]
+        for pattern in false_memory_patterns:
+            response = re.sub(pattern, '', response, flags=re.IGNORECASE)
+
+        # Clean up whitespace after removals
+        response = re.sub(r'\s{2,}', ' ', response).strip()
+
+        # 8. If response is empty after cleaning, provide a fallback
         if not response or len(response.strip()) < 5:
             response = "I hear you. How can I help you today?"
 
