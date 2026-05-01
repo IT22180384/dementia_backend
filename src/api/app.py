@@ -726,17 +726,20 @@ async def startup_event():
     logger.info("Dementia Detection & Monitoring API starting up...")
     logger.info("=" * 80)
 
-    # Connect to MongoDB (Team's existing code)
+    # Step 1: Connect to MongoDB FIRST (critical for reminder system)
+    db_connected = False
     try:
         await Database.connect_to_database()
         # Create indexes for better performance
         await Database.create_indexes()
         logger.info("[SUCCESS] MongoDB connected (conversational AI collections)")
+        db_connected = True
     except BaseException as e:
         # Catch BaseException so asyncio.CancelledError (inherits BaseException, not Exception
         # in Python 3.8+) does not propagate and kill the entire server startup.
         logger.error(f"MongoDB connection failed: {e}")
-        logger.warning("API will continue without database connection")
+        logger.warning("⚠️  API will continue without database connection")
+        db_connected = False
 
     try:
         await create_game_indexes()
@@ -758,14 +761,18 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"Session finalizer startup warning: {e}")
 
-    # Start real-time reminder monitoring
-    try:
-        realtime_engine = RealTimeReminderEngine()
-        await realtime_engine.start_engine()
-        app.state.realtime_engine = realtime_engine  # Store for access in routes
-        logger.info("✓ Real-time reminder monitoring started (checks every 30 seconds)")
-    except Exception as e:
-        logger.warning(f"Real-time reminder engine startup warning: {e}")
+    # Step 2: Start real-time reminder monitoring ONLY if database is connected
+    if db_connected:
+        try:
+            realtime_engine = RealTimeReminderEngine()
+            await realtime_engine.start_engine()
+            app.state.realtime_engine = realtime_engine  # Store for access in routes
+            logger.info("✓ Real-time reminder monitoring started (checks every 30 seconds)")
+        except Exception as e:
+            logger.error(f"[ERROR] Real-time reminder engine startup failed: {e}")
+            logger.warning("Reminder system will not be available")
+    else:
+        logger.warning("⚠️  Skipping real-time reminder engine (database not connected)")
 
     logger.info("=" * 80)
     logger.info("API ready to serve requests")
