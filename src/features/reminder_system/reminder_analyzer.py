@@ -210,7 +210,7 @@ class PittBasedReminderAnalyzer:
             )
             
             return {
-                'cognitive_risk_score': float(cognitive_risk),
+                'cognitive_risk_score': float(max(0.0, min(1.0, cognitive_risk))),
                 'confusion_detected': confusion_detected,
                 'memory_issue_detected': memory_issue,
                 'uncertainty_detected': uncertainty,
