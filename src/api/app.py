@@ -766,7 +766,12 @@ async def startup_event():
         try:
             realtime_engine = RealTimeReminderEngine()
             await realtime_engine.start_engine()
-            app.state.realtime_engine = realtime_engine  # Store for access in routes
+            app.state.realtime_engine = realtime_engine
+            # Give WebSocket routes the same engine instance so connections and
+            # alarm delivery share the same state (previously two separate instances
+            # were created, so alarms fired in one engine but WebSocket users were
+            # registered in the other — meaning alarms never reached connected users).
+            websocket_routes.set_engine(realtime_engine)
             logger.info("✓ Real-time reminder monitoring started (checks every 30 seconds)")
         except Exception as e:
             logger.error(f"[ERROR] Real-time reminder engine startup failed: {e}")
@@ -828,6 +833,13 @@ async def shutdown_event():
     logger.info("=" * 80)
     logger.info("Dementia Detection & Monitoring API shutting down...")
     logger.info("=" * 80)
+
+    # Stop real-time reminder engine
+    try:
+        if hasattr(app.state, "realtime_engine"):
+            await app.state.realtime_engine.stop_engine()
+    except Exception as e:
+        logger.warning(f"Error stopping reminder engine: {e}")
 
     # Stop session finalizer background task
     try:
