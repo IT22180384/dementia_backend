@@ -40,10 +40,54 @@ class BehaviorTracker:
         self.db_service = db_service
         self.interaction_cache: Dict[str, List[ReminderInteraction]] = defaultdict(list)
     
+    async def warm_cache_from_db(self, user_id: str, days: int = 30) -> int:
+        """Load recent interactions from MongoDB into the in-memory cache.
+
+        Call this at startup (and optionally before pattern analysis) so that
+        the sync get_user_behavior_pattern() has data even after a server restart.
+        Returns the number of interactions loaded.
+        """
+        if not self.db_service:
+            return 0
+        try:
+            from datetime import timedelta
+            start_date = datetime.now() - timedelta(days=days)
+            docs = await self.db_service.get_reminder_interactions_async(
+                user_id=user_id, start_date=start_date
+            )
+            loaded = 0
+            for doc in docs:
+                interaction_time = doc.get("interaction_time", datetime.now())
+                if isinstance(interaction_time, str):
+                    interaction_time = datetime.fromisoformat(interaction_time)
+                interaction = ReminderInteraction(
+                    id=doc.get("id"),
+                    reminder_id=doc.get("reminder_id", ""),
+                    user_id=user_id,
+                    reminder_category=doc.get("reminder_category"),
+                    interaction_type=InteractionType(doc.get("interaction_type", "confirmed")),
+                    interaction_time=interaction_time,
+                    user_response_text=doc.get("user_response_text"),
+                    cognitive_risk_score=doc.get("cognitive_risk_score"),
+                    confusion_detected=doc.get("confusion_detected", False),
+                    memory_issue_detected=doc.get("memory_issue_detected", False),
+                    response_time_seconds=doc.get("response_time_seconds"),
+                    recommended_action=doc.get("recommended_action"),
+                )
+                cache_key = f"{user_id}_{interaction.reminder_id}"
+                if interaction not in self.interaction_cache[cache_key]:
+                    self.interaction_cache[cache_key].append(interaction)
+                    loaded += 1
+            logger.info(f"Warmed cache for user {user_id}: {loaded} interactions loaded from DB")
+            return loaded
+        except Exception as e:
+            logger.error(f"Cache warm-up failed for user {user_id}: {e}")
+            return 0
+
     def log_interaction(self, interaction: ReminderInteraction):
         """
         Log a user interaction with a reminder.
-        
+
         Args:
             interaction: ReminderInteraction object with details
         """

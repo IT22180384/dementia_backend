@@ -66,15 +66,13 @@ router = APIRouter(prefix="/api/reminders", tags=["reminders"])
 
 # Initialize components (these would typically come from dependency injection)
 reminder_analyzer = PittBasedReminderAnalyzer()
-behavior_tracker = BehaviorTracker()
+_db_service = ReminderDatabaseService()          # singleton used by get_db_service() too
+behavior_tracker = BehaviorTracker(db_service=_db_service)
 scheduler = AdaptiveReminderScheduler(behavior_tracker, reminder_analyzer)
 caregiver_notifier = CaregiverNotifier()
 report_generator = WeeklyReportGenerator(behavior_tracker)
 cognitive_score_service = UserCognitiveScoreService(reminder_analyzer, behavior_tracker)
 nlp_engine = NLPEngine()
-
-# Database service - initialized lazily
-_db_service = None
 _bert_parser = None
 
 def _parse_reminder_from_text(

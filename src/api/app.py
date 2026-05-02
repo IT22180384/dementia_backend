@@ -771,6 +771,18 @@ async def startup_event():
         except Exception as e:
             logger.error(f"[ERROR] Real-time reminder engine startup failed: {e}")
             logger.warning("Reminder system will not be available")
+
+        # Step 3: Warm behavior-tracker cache from MongoDB so adaptive scheduling
+        # has data immediately after restart (not just from the current session).
+        try:
+            from src.routes.reminder_routes import behavior_tracker, _db_service
+            active_user_ids = await _db_service.get_active_user_ids()
+            total_loaded = 0
+            for uid in active_user_ids:
+                total_loaded += await behavior_tracker.warm_cache_from_db(uid, days=30)
+            logger.info(f"✓ Behavior cache warmed: {total_loaded} interactions across {len(active_user_ids)} users")
+        except Exception as e:
+            logger.warning(f"Behavior cache warm-up skipped: {e}")
     else:
         logger.warning("⚠️  Skipping real-time reminder engine (database not connected)")
 
