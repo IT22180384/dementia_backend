@@ -12,7 +12,8 @@ Provides endpoints for:
 
 from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, Form
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 import logging
 import uuid
 import tempfile
@@ -500,7 +501,8 @@ async def create_reminder_from_audio(
     user_id: str = Form(..., description="User identifier"),
     file: UploadFile = File(..., description="Audio file (wav, mp3, m4a, ogg, flac)"),
     priority: Optional[str] = Form("medium", description="Reminder priority (low, medium, high, critical)"),
-    caregiver_ids: Optional[str] = Form(None, description="Comma-separated caregiver IDs")
+    caregiver_ids: Optional[str] = Form(None, description="Comma-separated caregiver IDs"),
+    user_timezone: Optional[str] = Form(None, description="IANA timezone name e.g. Asia/Colombo")
 ):
     """
     Create reminder from audio recording using Whisper transcription + NLP parsing.
@@ -576,6 +578,18 @@ async def create_reminder_from_audio(
                 priority_override=priority
             )
             
+            # Convert extracted naive local time to UTC using user's timezone
+            if user_timezone:
+                try:
+                    user_tz = ZoneInfo(user_timezone)
+                    naive_local = reminder_details["scheduled_time"]
+                    local_aware = naive_local.replace(tzinfo=user_tz)
+                    utc_dt = local_aware.astimezone(timezone.utc).replace(tzinfo=None)
+                    reminder_details["scheduled_time"] = utc_dt
+                    logger.info(f"🌍 Converted {naive_local} ({user_timezone}) → {utc_dt} UTC")
+                except Exception as tz_err:
+                    logger.warning(f"Timezone conversion failed ({user_timezone}): {tz_err}")
+
             # Step 3: Create reminder
             reminder_id = f"reminder_{uuid.uuid4().hex[:12]}"
             
