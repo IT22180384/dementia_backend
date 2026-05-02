@@ -217,6 +217,17 @@ class ReminderDatabaseService:
             logger.error(f"Error getting due reminders: {e}")
             return []
 
+    async def get_active_user_ids(self) -> List[str]:
+        """Get distinct user IDs that have at least one active reminder."""
+        try:
+            user_ids = await self.reminders_collection.distinct(
+                "user_id", {"status": "active"}
+            )
+            return user_ids
+        except Exception as e:
+            logger.error(f"Error getting active user IDs: {e}")
+            return []
+
     async def delete_reminder(self, reminder_id: str) -> bool:
         """Delete a reminder."""
         try:

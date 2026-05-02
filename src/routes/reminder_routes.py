@@ -959,38 +959,57 @@ async def get_user_behavior_pattern(
 async def get_optimal_schedule(reminder_id: str):
     """
     Get optimal schedule recommendation for a reminder.
-    
+
     Returns adaptive scheduling recommendations based on:
     - Historical user behavior
     - Optimal response times
     - Cognitive risk patterns
-    
+
     - **reminder_id**: Reminder identifier
     """
     try:
-        # TODO: Get reminder from database
-        # reminder = db_service.get_reminder(reminder_id)
-        
-        # Mock reminder
+        db_service = get_db_service()
+        reminder_data = await db_service.get_reminder(reminder_id)
+
+        if not reminder_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Reminder {reminder_id} not found"
+            )
+
         from src.features.reminder_system.reminder_models import Reminder, ReminderPriority
-        
+
+        scheduled_time = reminder_data.get("scheduled_time")
+        if isinstance(scheduled_time, str):
+            scheduled_time = datetime.fromisoformat(scheduled_time.replace("+00:00", ""))
+        elif not isinstance(scheduled_time, datetime):
+            scheduled_time = datetime.now()
+
         reminder = Reminder(
             id=reminder_id,
-            user_id="user123",
-            title="Sample Reminder",
-            scheduled_time=datetime.now(),
-            priority=ReminderPriority.MEDIUM,
-            category="medication"
+            user_id=reminder_data["user_id"],
+            title=reminder_data.get("title", "Reminder"),
+            description=reminder_data.get("description"),
+            scheduled_time=scheduled_time,
+            priority=ReminderPriority(reminder_data.get("priority", "medium")),
+            category=reminder_data.get("category", "general"),
         )
-        
+
         schedule_info = scheduler.get_optimal_reminder_schedule(reminder)
-        
+
+        # Convert datetime to ISO string for JSON serialization
+        if isinstance(schedule_info.get("optimal_time"), datetime):
+            schedule_info["optimal_time"] = schedule_info["optimal_time"].isoformat()
+
         return {
             "status": "success",
             "reminder_id": reminder_id,
+            "user_id": reminder_data["user_id"],
             "schedule": schedule_info
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting schedule: {e}", exc_info=True)
         raise HTTPException(
