@@ -194,7 +194,7 @@ class ReminderDatabaseService:
                     "$gte": window_start,
                     "$lte": window_end
                 },
-                "status": "active"
+                "status": {"$in": ["active", "snoozed"]}
             }
 
             if user_id:
