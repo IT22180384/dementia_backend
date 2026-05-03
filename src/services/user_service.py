@@ -9,6 +9,7 @@ import hashlib
 import random
 import os
 import base64
+import uuid
 from datetime import datetime, timedelta
 from bson import Binary
 from google.oauth2 import id_token as google_id_token
@@ -39,16 +40,17 @@ class UserService:
     def generate_user_id(self, full_name: str, age: int) -> str:
         """
         Generate unique user ID
-        Format: USER-JOHN-45-1234
+        Format: USER-JOHN-45-A1B2C3D4
+        Uses UUID4 to guarantee uniqueness across all registrations.
         """
         # Extract first name
         name_parts = full_name.strip().split()
         first_name = name_parts[0].upper() if name_parts else "USER"
         
-        # Generate hash from timestamp
-        timestamp_hash = hashlib.md5(str(datetime.utcnow()).encode()).hexdigest()[:4].upper()
+        # Use UUID4 for a cryptographically random, collision-free suffix
+        unique_suffix = uuid.uuid4().hex[:8].upper()
         
-        user_id = f"USER-{first_name}-{age}-{timestamp_hash}"
+        user_id = f"USER-{first_name}-{age}-{unique_suffix}"
         return user_id
     
     async def register_user(
@@ -79,8 +81,13 @@ class UserService:
         if existing:
             raise ValueError("Email already registered")
         
-        # Generate user ID
-        user_id = self.generate_user_id(full_name, age or 0)
+        # Generate a collision-free user ID
+        for _ in range(10):
+            user_id = self.generate_user_id(full_name, age or 0)
+            if not await collection.find_one({"user_id": user_id}, {"user_id": 1}):
+                break
+        else:
+            raise ValueError("Failed to generate a unique user ID, please try again")
         
         # Hash password
         hashed_password = hash_password(password)

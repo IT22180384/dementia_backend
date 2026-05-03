@@ -174,36 +174,47 @@ def compute_session_features(
             "rtAdjMedian": 1.0,
             "sac": 0.0,
             "ies": 10.0,
-            "variability": 0.0
+            "variability": 0.0,
+            "hintDependencyRate": 0.0
         }
-    
-    # Extract data
+
+    # Extract data — use int() to handle both JSON booleans and integers
     rt_raw_list = [t.get("rt_raw", 1.0) for t in trials]
-    correct_list = [t.get("correct", 0) for t in trials]
-    
+    correct_list = [int(t.get("correct", 0)) for t in trials]
+    hint_used_list = [int(t.get("hint_used", 0)) for t in trials]
+
     # Adjust RTs
     rt_adj_list = adjust_reaction_times_batch(rt_raw_list, motor_baseline)
-    
+
     # Compute metrics
     total_attempts = len(trials)
     correct_count = sum(correct_list)
     error_count = total_attempts - correct_count
-    
-    accuracy = compute_session_accuracy(correct_count, total_attempts)
+    hints_used_count = sum(hint_used_list)
+
+    # Per paper: ACC = correct matches WITHOUT hints / total trials
+    correct_no_hint = sum(
+        1 for t in trials
+        if int(t.get("correct", 0)) == 1 and int(t.get("hint_used", 0)) == 0
+    )
+    accuracy = compute_session_accuracy(correct_no_hint, total_attempts)
     error_rate = error_count / total_attempts if total_attempts > 0 else 0.0
+    hint_dependency_rate = hints_used_count / total_attempts if total_attempts > 0 else 0.0
+
     rt_adj_median = compute_session_rt_adj_median(rt_adj_list)
     variability = compute_rt_variability(rt_adj_list)
-    
+
     sac = compute_sac(accuracy, rt_adj_median)
     ies = compute_ies(rt_adj_median, accuracy)
-    
+
     return {
         "accuracy": round(accuracy, 4),
         "errorRate": round(error_rate, 4),
         "rtAdjMedian": round(rt_adj_median, 4),
         "sac": round(sac, 4),
         "ies": round(ies, 4),
-        "variability": round(variability, 4)
+        "variability": round(variability, 4),
+        "hintDependencyRate": round(hint_dependency_rate, 4)
     }
 
 # ============================================================================
