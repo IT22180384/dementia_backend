@@ -11,6 +11,16 @@ from pathlib import Path
 from typing import Optional, Dict, List
 import logging
 
+# ============================================================================
+# FIX SSL CERTIFICATE ISSUES (Must be BEFORE HuggingFace imports)
+# ============================================================================
+try:
+    import certifi
+    os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
+    os.environ['SSL_CERT_FILE'] = certifi.where()
+except Exception:
+    pass  # If certifi not available, continue without SSL override
+
 logger = logging.getLogger(__name__)
 
 # ============================================================================
@@ -44,11 +54,14 @@ def _download_from_hf(repo_id: str, filename: str, local_dir: Path) -> Optional[
     """
     Download a single file from a public HuggingFace Hub repo into local_dir.
     Returns the local Path on success, or None on failure.
+    
+    SSL certificates are configured at module level to avoid system issues.
     """
     try:
         from huggingface_hub import hf_hub_download
         local_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Downloading {filename} from HuggingFace ({repo_id}) ...")
+        
         downloaded_path = hf_hub_download(
             repo_id=repo_id,
             filename=filename,
