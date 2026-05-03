@@ -857,6 +857,7 @@ async def get_patient_dashboard(
         completion_rate = (completed / total_reminders * 100) if total_reminders > 0 else 0
         
         # Get behavior pattern analysis using trained models
+        await behavior_tracker.warm_cache_from_db(patient_id, 30)
         behavior_pattern = behavior_tracker.get_user_behavior_pattern(
             user_id=patient_id,
             days=30
@@ -1328,6 +1329,7 @@ async def get_adherence_and_risk_score(
             stats["adherence"] = round(cat_adherence, 1)
 
         # --- ML Behavior pattern ---
+        await behavior_tracker.warm_cache_from_db(patient_id, days)
         behavior_pattern = behavior_tracker.get_user_behavior_pattern(
             user_id=patient_id,
             days=days
@@ -1464,6 +1466,7 @@ async def get_adherence_risk(
             ((completed * 1.0 + snoozed * 0.4) / total * 100) if total > 0 else 0.0, 1
         )
 
+        await behavior_tracker.warm_cache_from_db(patient_id, days)
         behavior_pattern = behavior_tracker.get_user_behavior_pattern(
             user_id=patient_id,
             days=days
@@ -1727,6 +1730,9 @@ async def get_behavior_analysis(
         if not await _caregiver_owns_patient(caregiver_id, patient_id):
             raise HTTPException(status_code=403, detail="Access denied to this patient")
         
+        # Warm the in-memory cache from MongoDB before sync analysis
+        await behavior_tracker.warm_cache_from_db(patient_id, days)
+
         # Get behavior pattern using trained models
         behavior_pattern = behavior_tracker.get_user_behavior_pattern(
             user_id=patient_id,

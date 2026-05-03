@@ -209,7 +209,8 @@ class BehaviorTracker:
         """Get interactions from database or cache."""
         cutoff_date = datetime.now() - timedelta(days=days)
         
-        # Try database first
+        # Try database first (sync stub always returns [] — real data is in the
+        # in-memory cache populated by warm_cache_from_db())
         if self.db_service:
             try:
                 filters = {'user_id': user_id}
@@ -217,12 +218,14 @@ class BehaviorTracker:
                     filters['reminder_id'] = reminder_id
                 if category:
                     filters['category'] = category
-                
+
                 interactions = self.db_service.get_reminder_interactions(
                     filters=filters,
                     start_date=cutoff_date
                 )
-                return interactions
+                if interactions:
+                    return interactions
+                # Fall through to cache when stub returns []
             except Exception as e:
                 logger.warning(f"Database query failed: {e}")
         
