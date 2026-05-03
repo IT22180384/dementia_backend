@@ -107,7 +107,6 @@ def extract_lstm_features(sessions: List[Dict]) -> np.ndarray:
 def predict_lstm_decline(sessions: List[Dict]) -> float:
     """
     Run LSTM model on session history to detect decline trend.
-    (Same as before - no changes needed)
     """
     if len(sessions) < 3:
         return 0.0
@@ -251,7 +250,10 @@ def predict_risk(sessions: List[Dict], current_features: Dict, lstm_score: float
     if scaler is not None:
         X_raw = X.copy()
         X = scaler.transform(X)
-        logger.info(f"✓ Features scaled (raw[0]={X_raw[0,0]:.4f} -> scaled[0]={X[0,0]:.4f})")
+        # Clip scaled features to ±5 sigma to prevent out-of-distribution inputs from
+        # overwhelming the logistic regression (e.g. extreme slope values from short history)
+        X = np.clip(X, -5.0, 5.0)
+        logger.info(f"✓ Features scaled+clipped (raw[0]={X_raw[0,0]:.4f} -> scaled[0]={X[0,0]:.4f})")
     else:
         logger.warning("⚠️ No scaler available - using raw features")
     
@@ -296,6 +298,14 @@ def predict_risk(sessions: List[Dict], current_features: Dict, lstm_score: float
         # ─────────────────────────────────────────────────────────────────────
         # Weighted risk score: MEDIUM contributes 50pts, HIGH contributes 100pts
         risk_score_0_100 = round((float(probs[0]) * 100 + float(probs[2]) * 50), 2)
+
+        # Floor the risk score to be consistent with the rule-overridden level.
+        # The ML model may have predicted LOW (score ≈ 0) but the safety floor
+        # escalated to HIGH/MEDIUM — the score must reflect the actual level.
+        if risk_level == "HIGH":
+            risk_score_0_100 = max(risk_score_0_100, 70.0)
+        elif risk_level == "MEDIUM":
+            risk_score_0_100 = max(risk_score_0_100, 35.0)
         
         logger.info(f"✅ FINAL PREDICTION: {risk_level} | HIGH={probs[0]:.3f}, LOW={probs[1]:.3f}, MED={probs[2]:.3f} | Score: {risk_score_0_100}/100")
         

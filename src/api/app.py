@@ -856,10 +856,13 @@ async def shutdown_event():
 
 if __name__ == "__main__":
     import uvicorn
+    _host = os.getenv("API_HOST", "0.0.0.0")
+    _port = int(os.getenv("API_PORT", "8080"))
+    _debug = os.getenv("API_DEBUG", "False").lower() == "true"
     uvicorn.run(
         "app:app",
-        host="0.0.0.0",
-        port=8080,
-        reload=True,
+        host=_host,
+        port=_port,
+        reload=_debug,
         log_level="info"
     )

@@ -4,7 +4,7 @@ Game API Routes
 Endpoints for game session processing, calibration, and history
 Compatible with teammate's async Database class
 """
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Header
 from datetime import datetime
 from typing import List, Optional
 import logging
@@ -23,6 +23,7 @@ from src.features.game.cognitive_scoring import compute_motor_baseline
 from src.database import Database  # Use teammate's Database class
 from src.routes.user_routes import get_current_user
 from src.routes.caregiver_routes import get_current_caregiver
+from src.utils.auth import verify_token
 
 router = APIRouter(prefix="/game", tags=["Game"])
 logger = logging.getLogger(__name__)
@@ -156,7 +157,60 @@ async def submit_game_session(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 # ============================================================================
-# GET /game/motor-baseline/{userId}
+# GET /game/motor-baseline  (auth-based — reads userId from JWT token)
+# Auth is optional: if no valid token is provided, returns a no-calibration
+# response gracefully (handles 307 redirect from empty-userId frontend calls).
+# ============================================================================
+@router.get("/motor-baseline")
+async def get_motor_baseline_from_token(
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Get the authenticated user's latest motor baseline using the JWT token.
+    No userId needed in the URL — identity is taken from the Bearer token.
+    Returns {"motor_baseline": null} gracefully if no valid token is provided.
+    """
+    # If no token provided (e.g. trailing-slash redirect stripped the header), return empty
+    if not authorization:
+        return {"userId": None, "motor_baseline": None, "message": "No auth token provided"}
+
+    try:
+        token = authorization.replace("Bearer ", "").strip()
+        payload = verify_token(token)
+    except Exception:
+        return {"userId": None, "motor_baseline": None, "message": "Invalid token"}
+
+    if payload is None:
+        return {"userId": None, "motor_baseline": None, "message": "Invalid or expired token"}
+
+    userId = payload.get("user_id")
+    if not userId:
+        return {"userId": None, "motor_baseline": None, "message": "User not found in token"}
+
+    try:
+        calibrations = Database.get_collection("calibrations")
+        calibration = await calibrations.find_one(
+            {"userId": userId},
+            sort=[("calibrationDate", -1)]
+        )
+
+        if not calibration:
+            return {"userId": userId, "motor_baseline": None, "message": "No calibration found"}
+
+        return {
+            "userId": userId,
+            "motor_baseline": calibration.get("motorBaseline"),
+            "n_taps": len(calibration.get("tapTimes", [])),
+            "created_at": calibration.get("calibrationDate")
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching baseline: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch baseline")
+
+
+# ============================================================================
+# GET /game/motor-baseline/{userId}  (kept for backward compatibility)
 # ============================================================================
 @router.get("/motor-baseline/{userId}")
 async def get_motor_baseline(userId: str):
@@ -264,16 +318,42 @@ async def get_session_history(userId: str, limit: int = 20):
         for session in sessions:
             features = session.get("features", {})
             prediction = session.get("prediction", {})
-            
+            raw_summary = session.get("rawSummary", {})
+
+            # Use total accuracy (correct incl. hints / total) for display.
+            # features["accuracy"] is correct-without-hints only (per thesis formula).
+            # Fall back to features["accuracy"] when rawSummary is absent (old sessions).
+            total_attempts = raw_summary.get("totalAttempts", 0)
+            if total_attempts and total_attempts > 0:
+                total_correct = raw_summary.get("correct", 0)
+                total_accuracy = round(total_correct / total_attempts, 4)
+                hints_used = raw_summary.get("hintsUsed", 0)
+                hint_dep_rate = round(hints_used / total_attempts, 4)
+            else:
+                # Old session without rawSummary — use stored feature values
+                total_accuracy = round(features.get("accuracy", 0.0), 4)
+                hint_dep_rate = round(features.get("hintDependencyRate", 0.0), 4)
+
+            # Floor riskScore for old sessions where rule override set level to HIGH/MEDIUM
+            # but left riskScore0_100 at the ML model's near-zero value.
+            risk_level_stored = prediction.get("riskLevel", "UNKNOWN")
+            risk_score = prediction.get("riskScore0_100", 0.0)
+            if risk_level_stored == "HIGH":
+                risk_score = max(risk_score, 70.0)
+            elif risk_level_stored == "MEDIUM":
+                risk_score = max(risk_score, 35.0)
+
             item = SessionHistoryItem(
                 sessionId=session["sessionId"],
                 timestamp=session["timestamp"].isoformat(),
                 gameType=session.get("gameType", "card_matching"),
                 level=session.get("level", 1),
+                accuracy=total_accuracy,
+                hintDependencyRate=hint_dep_rate,
                 sac=features.get("sac", 0.0),
                 ies=features.get("ies", 0.0),
-                riskLevel=prediction.get("riskLevel", "UNKNOWN"),
-                riskScore=prediction.get("riskScore0_100", 0.0)
+                riskLevel=risk_level_stored,
+                riskScore=risk_score
             )
             history_items.append(item)
         
@@ -308,7 +388,19 @@ async def get_user_stats(userId: str):
         sessions = await cursor.to_list(length=None)
         
         if not sessions:
-            raise HTTPException(status_code=404, detail="No sessions found for this user")
+            # New user with no sessions — return clean zero stats so the frontend
+            # clears any previously cached data instead of keeping old user's stats.
+            # Return "" (not None) for lastSessionDate so Kotlin's non-nullable
+            # String field deserializes without a crash.
+            return UserStatsResponse(
+                userId=userId,
+                totalSessions=0,
+                avgSAC=0.0,
+                avgIES=0.0,
+                currentRiskLevel="UNKNOWN",
+                recentRiskScore=0.0,
+                lastSessionDate=""
+            )
         
         # Compute averages
         total = len(sessions)
@@ -317,8 +409,13 @@ async def get_user_stats(userId: str):
         
         # Get most recent
         latest = sessions[0]
-        current_risk = latest["prediction"]["riskLevel"]
-        recent_score = latest["prediction"]["riskScore0_100"]
+        current_risk = latest["prediction"].get("riskLevel", "UNKNOWN")
+        recent_score = latest["prediction"].get("riskScore0_100", 0.0)
+        # Floor score for old sessions where rule override didn't update riskScore0_100
+        if current_risk == "HIGH":
+            recent_score = max(recent_score, 70.0)
+        elif current_risk == "MEDIUM":
+            recent_score = max(recent_score, 35.0)
         last_session = latest["timestamp"].isoformat()
         
         return UserStatsResponse(
