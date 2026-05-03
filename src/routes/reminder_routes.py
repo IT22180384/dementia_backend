@@ -57,10 +57,10 @@ logger = logging.getLogger(__name__)
 try:
     from src.features.reminder_system.bert_text_parser import get_bert_parser
     BERT_AVAILABLE = True
-    logger.info("✅ BERT text parser available")
+    logger.info("BERT text parser available")
 except ImportError:
     BERT_AVAILABLE = False
-    logger.info("⚠️ BERT not available, using regex parser")
+    logger.info("BERT not available, using regex parser")
 
 # Create router
 router = APIRouter(prefix="/api/reminders", tags=["reminders"])
@@ -101,7 +101,7 @@ def _parse_reminder_from_text(
                 _bert_parser = get_bert_parser()
             
             result = _bert_parser.parse_reminder(text, user_id, priority_override)
-            logger.info(f"✅ BERT parsed: {result['category']} at {result['scheduled_time']}")
+            logger.info(f"BERT parsed: {result['category']} at {result['scheduled_time']}")
             return result
         except Exception as e:
             logger.warning(f"BERT parsing failed, falling back to regex: {e}")
@@ -394,11 +394,16 @@ async def _save_caregiver_alert(
 
         type_labels = {
             "missed_medication":    f"Missed medication: {reminder_title}",
+            "missed_reminder":      f"Missed reminder: {reminder_title}",
             "snoozed_reminder":     f"Reminder snoozed: {reminder_title}",
             "new_high_priority":    f"New {priority} priority reminder: {reminder_title}",
         }
         type_messages = {
             "missed_medication":  (
+                f"{reminder_category.capitalize()} reminder '{reminder_title}' was MISSED"
+                + (f" (scheduled {scheduled_time.strftime('%H:%M')})" if scheduled_time else "") + "."
+            ),
+            "missed_reminder": (
                 f"{reminder_category.capitalize()} reminder '{reminder_title}' was MISSED"
                 + (f" (scheduled {scheduled_time.strftime('%H:%M')})" if scheduled_time else "") + "."
             ),
@@ -1157,8 +1162,8 @@ async def snooze_reminder(reminder_id: str, delay_minutes: int = 15, user_id: Op
             reminder_id,
             {
                 "status": "snoozed",
-                "scheduled_time": new_time.isoformat(),
-                "snoozed_at": datetime.now().isoformat(),
+                "scheduled_time": new_time,          # datetime — must match $gte/$lte in get_due_reminders
+                "snoozed_at": datetime.now(),
                 "snooze_delay_minutes": delay_minutes,
                 "snooze_count": reminder_data.get("snooze_count", 0) + 1,
             }
@@ -1179,10 +1184,11 @@ async def snooze_reminder(reminder_id: str, delay_minutes: int = 15, user_id: Op
         except Exception as bt_err:
             logger.warning(f"Behavior tracking failed on snooze: {bt_err}")
 
-        # ── Alert caregivers for snoozed medication reminders ──────────────
+        # ── Alert caregivers when notify_caregiver_on_miss=True and priority is high/critical ──
+        notify_on_miss = reminder_data.get("notify_caregiver_on_miss", False)
         if (
             reminder_obj.caregiver_ids
-            and reminder_obj.category == "medication"
+            and notify_on_miss
             and reminder_obj.priority in (ReminderPriority.HIGH, ReminderPriority.CRITICAL)
         ):
             await _save_caregiver_alert(
@@ -2395,20 +2401,27 @@ async def mark_reminder_missed(reminder_id: str, user_id: Optional[str] = None):
             f"(user: {effective_user_id})"
         )
 
-        # ── Alert caregivers when a medication reminder is missed ──────────
-        caregiver_ids = reminder_data.get("caregiver_ids", [])
-        category      = reminder_data.get("category", "general")
-        priority_val  = reminder_data.get("priority", "medium")
-        if caregiver_ids and category == "medication":
-            sched_raw = reminder_data.get("scheduled_time")
-            sched_dt  = (
+        # ── Alert caregivers when notify_caregiver_on_miss=True and priority is high/critical ──
+        caregiver_ids        = reminder_data.get("caregiver_ids", [])
+        category             = reminder_data.get("category", "general")
+        priority_val         = reminder_data.get("priority", "medium")
+        notify_on_miss       = reminder_data.get("notify_caregiver_on_miss", False)
+        should_alert         = (
+            caregiver_ids
+            and notify_on_miss
+            and priority_val in ("high", "critical")
+        )
+        if should_alert:
+            sched_raw  = reminder_data.get("scheduled_time")
+            sched_dt   = (
                 datetime.fromisoformat(sched_raw.replace("+00:00", ""))
                 if isinstance(sched_raw, str) else sched_raw
             )
+            alert_type = "missed_medication" if category == "medication" else "missed_reminder"
             await _save_caregiver_alert(
                 patient_id=effective_user_id,
                 caregiver_ids=caregiver_ids,
-                alert_type="missed_medication",
+                alert_type=alert_type,
                 priority=priority_val,
                 reminder_id=reminder_id,
                 reminder_title=reminder_data.get("title", "Reminder"),
@@ -2514,7 +2527,40 @@ async def snooze_reminder_with_tracking(reminder_id: str, delay_minutes: int = 1
                 "status": "snoozed"
             }
         )
-        
+
+        # Remove from the engine's active_alarms so the timeout monitor doesn't
+        # mark this reminder as missed while it's waiting for its snooze to expire.
+        try:
+            from src.routes import websocket_routes
+            engine = websocket_routes.realtime_engine
+            if engine and reminder_id in engine.active_alarms:
+                del engine.active_alarms[reminder_id]
+                logger.info(f"Removed snoozed reminder {reminder_id} from active_alarms")
+        except Exception as eng_err:
+            logger.warning(f"Could not clear active_alarm for {reminder_id}: {eng_err}")
+
+        # ── Alert caregivers when notify_caregiver_on_miss=True and priority is high/critical ──
+        notify_on_miss = reminder_data.get("notify_caregiver_on_miss", False)
+        caregiver_ids  = reminder_data.get("caregiver_ids", [])
+        priority_val   = reminder_data.get("priority", "medium")
+        if caregiver_ids and notify_on_miss and priority_val in ("high", "critical"):
+            sched_raw = reminder_data.get("scheduled_time")
+            sched_dt  = (
+                datetime.fromisoformat(sched_raw.replace("+00:00", ""))
+                if isinstance(sched_raw, str) else sched_raw
+            )
+            await _save_caregiver_alert(
+                patient_id=reminder_data["user_id"],
+                caregiver_ids=caregiver_ids,
+                alert_type="snoozed_reminder",
+                priority=priority_val,
+                reminder_id=reminder_id,
+                reminder_title=reminder_data.get("title", "Reminder"),
+                reminder_category=reminder_data.get("category", "general"),
+                scheduled_time=sched_dt,
+            )
+            alert_caregiver = True
+
         return {
             "status": "success",
             "message": f"Reminder snoozed for {delay_minutes} minutes",

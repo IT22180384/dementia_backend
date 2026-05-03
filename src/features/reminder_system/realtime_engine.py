@@ -256,7 +256,13 @@ class RealTimeReminderEngine:
                 for reminder_data in due_reminders:
                     rid = reminder_data.get("id", "")
                     if rid in self.active_alarms:
-                        continue
+                        # If the reminder was snoozed by the user, clear it so it
+                        # can be re-delivered now that its snooze period has expired.
+                        if reminder_data.get("status") == "snoozed":
+                            del self.active_alarms[rid]
+                            logger.info(f"Snooze expired for {rid} — cleared from active_alarms for re-delivery")
+                        else:
+                            continue  # Still awaiting acknowledgment — skip
 
                     reminder = self._dict_to_reminder(reminder_data)
 
