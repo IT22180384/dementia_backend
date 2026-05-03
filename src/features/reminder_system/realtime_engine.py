@@ -744,7 +744,8 @@ class RealTimeReminderEngine:
         analysis_result: Dict[str, Any]
     ):
         """Send alerts to caregivers if needed."""
-        caregiver_ids = json.loads(reminder_data.get("caregiver_ids", "[]"))
+        raw_cids = reminder_data.get("caregiver_ids", [])
+        caregiver_ids = raw_cids if isinstance(raw_cids, list) else json.loads(raw_cids)
         
         for caregiver_id in caregiver_ids:
             alert_message = {
@@ -829,7 +830,7 @@ class RealTimeReminderEngine:
             priority=ReminderPriority(reminder_data.get("priority", "medium")),
             category=reminder_data.get("category", "general"),
             repeat_pattern=reminder_data.get("repeat_pattern"),
-            caregiver_ids=json.loads(reminder_data.get("caregiver_ids", "[]")),
+            caregiver_ids=(lambda v: v if isinstance(v, list) else json.loads(v))(reminder_data.get("caregiver_ids", [])),
             adaptive_scheduling_enabled=reminder_data.get("adaptive_scheduling_enabled", True),
             escalation_enabled=reminder_data.get("escalation_enabled", True),
             status=ReminderStatus(reminder_data.get("status", "active"))

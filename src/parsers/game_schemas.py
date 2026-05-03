@@ -21,6 +21,14 @@ class GameTrial(BaseModel):
     error: int = Field(default=0, description="1 if error, 0 otherwise", ge=0, le=1)
     hint_used: int = Field(default=0, description="1 if hint used, 0 otherwise", ge=0, le=1)
 
+    @field_validator("correct", "error", "hint_used", mode="before")
+    @classmethod
+    def coerce_bool_to_int(cls, v):
+        """Explicitly convert JSON booleans (true/false) to int (1/0)."""
+        if isinstance(v, bool):
+            return 1 if v else 0
+        return v
+
 class GameSummary(BaseModel):
     """Summary metrics (alternative to trial-level data)"""
     totalAttempts: int = Field(..., ge=1)
@@ -84,6 +92,7 @@ class FeaturesResponse(BaseModel):
     sac: float
     ies: float
     variability: float
+    hintDependencyRate: float = 0.0
 
 class PredictionResponse(BaseModel):
     """Risk prediction output"""
@@ -117,6 +126,8 @@ class SessionHistoryItem(BaseModel):
     timestamp: str
     gameType: str
     level: int
+    accuracy: float
+    hintDependencyRate: float = 0.0
     sac: float
     ies: float
     riskLevel: str

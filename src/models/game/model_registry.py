@@ -67,141 +67,126 @@ def _download_from_hf(repo_id: str, filename: str, local_dir: Path) -> Optional[
 def load_lstm_model():
     """
     Load LSTM model for temporal trend analysis.
-    Local path: src/models/game/lstm_model/lstm_model.keras
-    HuggingFace fallback: vlakvindu/Dementia_LSTM_Model
+    PRIORITY: Always download from HuggingFace (vlakvindu/Dementia_LSTM_Model)
+    Caches to: src/models/game/lstm_model/.cache/huggingface/
     """
     try:
         from tensorflow import keras
 
-        keras_path = LSTM_MODEL_DIR / "lstm_model.keras"
-        h5_path = LSTM_MODEL_DIR / "lstm_model.h5"
-
-        # Download from HuggingFace if not available locally
-        if not keras_path.exists() and not h5_path.exists():
-            keras_path = _download_from_hf(HF_LSTM_REPO, "lstm_model.keras", LSTM_MODEL_DIR)
-            if keras_path is None:
-                logger.warning("[WARNING] LSTM model unavailable locally and download failed")
-                return None
-
-        if keras_path and keras_path.exists():
-            model = keras.models.load_model(str(keras_path))
-            logger.info(f"[OK] LSTM model loaded from {keras_path}")
-        elif h5_path.exists():
-            model = keras.models.load_model(str(h5_path))
-            logger.info(f"[OK] LSTM model loaded from {h5_path}")
-        else:
-            logger.warning("[WARNING] LSTM model file not found after download attempt")
+        logger.info("[HuggingFace] Downloading LSTM model from vlakvindu/Dementia_LSTM_Model...")
+        
+        # Always download from HuggingFace (not from local files)
+        keras_path = _download_from_hf(HF_LSTM_REPO, "lstm_model.keras", LSTM_MODEL_DIR)
+        
+        if keras_path is None or not keras_path.exists():
+            logger.error("[CRITICAL] Failed to download LSTM model from HuggingFace")
             return None
 
+        model = keras.models.load_model(str(keras_path))
+        logger.info(f"✓ LSTM model loaded from HuggingFace: {keras_path}")
         return model
 
     except Exception as e:
-        logger.error(f"✗ Failed to load LSTM model: {e}")
+        logger.error(f"✗ Failed to load LSTM model from HuggingFace: {e}")
         return None
 
 def load_lstm_scaler():
     """
     Load scaler for LSTM input normalization.
-    Local path: src/models/game/lstm_model/lstm_scaler.pkl
-    HuggingFace fallback: vlakvindu/Dementia_LSTM_Model
+    PRIORITY: Always download from HuggingFace (vlakvindu/Dementia_LSTM_Model)
+    Caches to: src/models/game/lstm_model/.cache/huggingface/
     """
     try:
-        scaler_path = LSTM_MODEL_DIR / "lstm_scaler.pkl"
-
-        if not scaler_path.exists():
-            downloaded = _download_from_hf(HF_LSTM_REPO, "lstm_scaler.pkl", LSTM_MODEL_DIR)
-            if downloaded is None:
-                logger.warning("[WARNING] LSTM scaler unavailable, will skip scaling")
-                return None
-            scaler_path = downloaded
+        logger.info("[HuggingFace] Downloading LSTM scaler from vlakvindu/Dementia_LSTM_Model...")
+        
+        # Always download from HuggingFace (not from local files)
+        scaler_path = _download_from_hf(HF_LSTM_REPO, "lstm_scaler.pkl", LSTM_MODEL_DIR)
+        
+        if scaler_path is None or not scaler_path.exists():
+            logger.error("[CRITICAL] Failed to download LSTM scaler from HuggingFace")
+            return None
 
         with open(scaler_path, "rb") as f:
             scaler = pickle.load(f)
 
-        logger.info(f"[OK] LSTM scaler loaded from {scaler_path}")
+        logger.info(f"✓ LSTM scaler loaded from HuggingFace: {scaler_path}")
         return scaler
 
     except Exception as e:
-        logger.error(f"✗ Failed to load LSTM scaler: {e}")
+        logger.error(f"✗ Failed to load LSTM scaler from HuggingFace: {e}")
         return None
 
 
 def load_risk_classifier():
     """
     Load Logistic Regression risk classifier.
-    Local path: src/models/game/risk_classifier/risk_logreg.pkl
-    HuggingFace fallback: vlakvindu/Dementia_Risk_Clasification_model
+    PRIORITY: Always download from HuggingFace (vlakvindu/Dementia_Risk_Clasification_model)
+    Caches to: src/models/game/risk_classifier/.cache/huggingface/
     """
     try:
-        model_path = RISK_CLASSIFIER_DIR / "risk_logreg.pkl"
-        if not model_path.exists():
-            model_path = RISK_CLASSIFIER_DIR / "logistic_regression_model.pkl"
-
-        if not model_path.exists():
-            downloaded = _download_from_hf(HF_RISK_REPO, "risk_logreg.pkl", RISK_CLASSIFIER_DIR)
-            if downloaded is None:
-                logger.warning("[WARNING] Risk classifier unavailable, will use dummy")
-                return None
-            model_path = downloaded
+        logger.info("[HuggingFace] Downloading Risk Classifier from vlakvindu/Dementia_Risk_Clasification_model...")
+        
+        # Always download from HuggingFace (not from local files)
+        model_path = _download_from_hf(HF_RISK_REPO, "risk_logreg.pkl", RISK_CLASSIFIER_DIR)
+        
+        if model_path is None or not model_path.exists():
+            logger.error("[CRITICAL] Failed to download Risk Classifier from HuggingFace")
+            return None
 
         model = joblib.load(model_path)
-        logger.info(f"[OK] Risk classifier loaded from {model_path}")
+        logger.info(f"✓ Risk classifier loaded from HuggingFace: {model_path}")
         return model
 
     except Exception as e:
-        logger.error(f"✗ Failed to load risk classifier: {e}")
+        logger.error(f"✗ Failed to load risk classifier from HuggingFace: {e}")
         return None
 
 def load_risk_scaler():
     """
     Load scaler for risk classifier input features.
-    Local path: src/models/game/risk_classifier/risk_scaler.pkl
-    HuggingFace fallback: vlakvindu/Dementia_Risk_Clasification_model
+    PRIORITY: Always download from HuggingFace (vlakvindu/Dementia_Risk_Clasification_model)
+    Caches to: src/models/game/risk_classifier/.cache/huggingface/
     """
     try:
-        scaler_path = RISK_CLASSIFIER_DIR / "risk_scaler.pkl"
-        if not scaler_path.exists():
-            scaler_path = RISK_CLASSIFIER_DIR / "feature_scaler.pkl"
-
-        if not scaler_path.exists():
-            downloaded = _download_from_hf(HF_RISK_REPO, "risk_scaler.pkl", RISK_CLASSIFIER_DIR)
-            if downloaded is None:
-                logger.warning("[WARNING] Risk scaler unavailable, will skip scaling")
-                return None
-            scaler_path = downloaded
+        logger.info("[HuggingFace] Downloading Risk Scaler from vlakvindu/Dementia_Risk_Clasification_model...")
+        
+        # Always download from HuggingFace (not from local files)
+        scaler_path = _download_from_hf(HF_RISK_REPO, "risk_scaler.pkl", RISK_CLASSIFIER_DIR)
+        
+        if scaler_path is None or not scaler_path.exists():
+            logger.error("[CRITICAL] Failed to download Risk Scaler from HuggingFace")
+            return None
 
         scaler = joblib.load(scaler_path)
-        logger.info(f"[OK] Risk scaler loaded from {scaler_path}")
+        logger.info(f"✓ Risk scaler loaded from HuggingFace: {scaler_path}")
         return scaler
 
     except Exception as e:
-        logger.error(f"✗ Failed to load risk scaler: {e}")
+        logger.error(f"✗ Failed to load risk scaler from HuggingFace: {e}")
         return None
 
 def load_label_encoder():
     """
     Load label encoder for risk classifier output labels.
-    Local path: src/models/game/risk_classifier/risk_label_encoder.pkl
-    HuggingFace fallback: vlakvindu/Dementia_Risk_Clasification_model
+    PRIORITY: Always download from HuggingFace (vlakvindu/Dementia_Risk_Clasification_model)
+    Caches to: src/models/game/risk_classifier/.cache/huggingface/
     """
     try:
-        encoder_path = RISK_CLASSIFIER_DIR / "risk_label_encoder.pkl"
-        if not encoder_path.exists():
-            encoder_path = RISK_CLASSIFIER_DIR / "label_encoder.pkl"
-
-        if not encoder_path.exists():
-            downloaded = _download_from_hf(HF_RISK_REPO, "risk_label_encoder.pkl", RISK_CLASSIFIER_DIR)
-            if downloaded is None:
-                logger.warning("[WARNING] Label encoder unavailable, using defaults")
-                return None
-            encoder_path = downloaded
+        logger.info("[HuggingFace] Downloading Label Encoder from vlakvindu/Dementia_Risk_Clasification_model...")
+        
+        # Always download from HuggingFace (not from local files)
+        encoder_path = _download_from_hf(HF_RISK_REPO, "risk_label_encoder.pkl", RISK_CLASSIFIER_DIR)
+        
+        if encoder_path is None or not encoder_path.exists():
+            logger.error("[CRITICAL] Failed to download Label Encoder from HuggingFace")
+            return None
 
         encoder = joblib.load(encoder_path)
-        logger.info(f"[OK] Label encoder loaded from {encoder_path}")
+        logger.info(f"✓ Label encoder loaded from HuggingFace: {encoder_path}")
         return encoder
 
     except Exception as e:
-        logger.error(f"✗ Failed to load label encoder: {e}")
+        logger.error(f"✗ Failed to load label encoder from HuggingFace: {e}")
         return None
 
 # ============================================================================
@@ -209,7 +194,12 @@ def load_label_encoder():
 # ============================================================================
 def load_all_models():
     """
-    Load all models into memory.
+    Load all models from HuggingFace only (at startup).
+    PRIORITY: Download from HuggingFace repositories
+    - vlakvindu/Dementia_LSTM_Model
+    - vlakvindu/Dementia_Risk_Clasification_model
+    
+    Caches models to local .cache/huggingface/ for reuse (fast on subsequent startups).
     Call this once at FastAPI startup.
     """
     global _MODEL_LOADED
@@ -218,9 +208,12 @@ def load_all_models():
         logger.info("Models already loaded, skipping")
         return
     
-    logger.info("=" * 60)
-    logger.info(" LOADING ML MODELS...")
-    logger.info("=" * 60)
+    logger.info("=" * 70)
+    logger.info("🔄 LOADING ML MODELS FROM HUGGINGFACE ONLY")
+    logger.info("=" * 70)
+    logger.info("Priority: Download from uploaded HuggingFace repositories")
+    logger.info("Cache: Local .cache/huggingface/ folders for faster reuse")
+    logger.info("-" * 70)
     
     _MODELS["lstm_model"] = load_lstm_model()
     _MODELS["lstm_scaler"] = load_lstm_scaler()
@@ -231,23 +224,32 @@ def load_all_models():
     _MODEL_LOADED = True
     
     # Log detailed summary
-    logger.info("=" * 60)
+    logger.info("=" * 70)
     logger.info("MODEL LOADING SUMMARY:")
-    logger.info("-" * 60)
-    logger.info(f"  LSTM Model: {'[OK] Loaded' if _MODELS['lstm_model'] is not None else '[WARN] Failed (will use dummy)'}")
-    logger.info(f"  Risk Classifier: {'[OK] Loaded (' + _MODELS['risk_classifier'].__class__.__name__ + ')' if _MODELS['risk_classifier'] is not None else '[ERROR] FAILED - WILL USE RANDOM!'}")
-    logger.info(f"  Feature Scaler: {'[OK] Loaded' if _MODELS['scaler'] is not None else '[WARN] Failed'}")
-    logger.info(f"  Label Encoder: {'[OK] Loaded (classes: ' + str(_MODELS['label_encoder'].classes_ if _MODELS['label_encoder'] else 'None') + ')' if _MODELS['label_encoder'] is not None else '[WARN] Failed'}")
-    logger.info("-" * 60)
+    logger.info("-" * 70)
+    logger.info(f"  LSTM Model: {'✓ LOADED from HF' if _MODELS['lstm_model'] is not None else '✗ FAILED'}")
+    logger.info(f"  LSTM Scaler: {'✓ LOADED from HF' if _MODELS['lstm_scaler'] is not None else '✗ FAILED'}")
+    logger.info(f"  Risk Classifier: {'✓ LOADED from HF (' + _MODELS['risk_classifier'].__class__.__name__ + ')' if _MODELS['risk_classifier'] is not None else '✗ FAILED'}")
+    logger.info(f"  Feature Scaler: {'✓ LOADED from HF' if _MODELS['scaler'] is not None else '✗ FAILED'}")
+    logger.info(f"  Label Encoder: {'✓ LOADED from HF' if _MODELS['label_encoder'] is not None else '✗ FAILED'}")
+    logger.info("-" * 70)
 
+    # Check for critical failures
+    if _MODELS['lstm_model'] is None:
+        logger.error("[CRITICAL] LSTM model FAILED to load from HuggingFace!")
+        logger.error("Repo: vlakvindu/Dementia_LSTM_Model")
+    
     if _MODELS['risk_classifier'] is None:
-        logger.error("[CRITICAL] Risk classifier FAILED to load!")
-        logger.error("Check model file: src/models/game/risk_classifier/risk_logreg.pkl")
-        logger.error("API will use RANDOM predictions until fixed!")
+        logger.error("[CRITICAL] Risk classifier FAILED to load from HuggingFace!")
+        logger.error("Repo: vlakvindu/Dementia_Risk_Clasification_model")
+    
+    if _MODELS['lstm_model'] is not None and _MODELS['risk_classifier'] is not None:
+        logger.info("✓ ALL MODELS LOADED SUCCESSFULLY FROM HUGGINGFACE!")
+        logger.info("✓ Models cached to .cache/huggingface/ for fast reuse")
     else:
-        logger.info(f"[OK] Risk classifier ready: {_MODELS['risk_classifier'].__class__.__name__}")
+        logger.error("✗ CRITICAL: Some models failed to load from HuggingFace")
 
-    logger.info("=" * 60)
+    logger.info("=" * 70)
 
 # ============================================================================
 # Getter Functions (Use in Services)
@@ -301,17 +303,29 @@ class DummyRiskClassifier:
         return np.random.choice([0, 1, 2], size=X.shape[0])  # 0=LOW, 1=MED, 2=HIGH
 
 def get_lstm_model_safe():
-    """Get LSTM model, fallback to dummy if not loaded"""
+    """Get LSTM model (from HuggingFace only)"""
     model = get_lstm_model()
     if model is None:
-        logger.warning("Using dummy LSTM model")
-        return DummyLSTM()
+        raise RuntimeError(
+            "LSTM model failed to load from HuggingFace!\n"
+            "Repository: vlakvindu/Dementia_LSTM_Model\n"
+            "Please verify:\n"
+            "1. Internet connection is available\n"
+            "2. HuggingFace repository is public\n"
+            "3. hf_hub_download can access the repository"
+        )
     return model
 
 def get_risk_classifier_safe():
-    """Get risk classifier, fallback to dummy if not loaded"""
+    """Get risk classifier (from HuggingFace only)"""
     model = get_risk_classifier()
     if model is None:
-        logger.warning("Using dummy risk classifier")
-        return DummyRiskClassifier()
+        raise RuntimeError(
+            "Risk classifier failed to load from HuggingFace!\n"
+            "Repository: vlakvindu/Dementia_Risk_Clasification_model\n"
+            "Please verify:\n"
+            "1. Internet connection is available\n"
+            "2. HuggingFace repository is public\n"
+            "3. hf_hub_download can access the repository"
+        )
     return model
