@@ -402,10 +402,10 @@ async def get_user_stats(userId: str):
                 lastSessionDate=""
             )
         
-        # Compute averages
+        # Compute averages – use .get() so old sessions without a 'features' key don't crash
         total = len(sessions)
-        avg_sac = sum(s["features"]["sac"] for s in sessions) / total
-        avg_ies = sum(s["features"]["ies"] for s in sessions) / total
+        avg_sac = sum(s.get("features", {}).get("sac", 0.0) for s in sessions) / total
+        avg_ies = sum(s.get("features", {}).get("ies", 0.0) for s in sessions) / total
         
         # Get most recent
         latest = sessions[0]

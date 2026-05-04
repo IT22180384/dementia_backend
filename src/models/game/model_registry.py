@@ -316,29 +316,33 @@ class DummyRiskClassifier:
         return np.random.choice([0, 1, 2], size=X.shape[0])  # 0=LOW, 1=MED, 2=HIGH
 
 def get_lstm_model_safe():
-    """Get LSTM model (from HuggingFace only)"""
+    """Get LSTM model — returns DummyLSTM if HuggingFace download failed.
+
+    The LSTM score is a *supporting* signal for the risk classifier; a dummy
+    value (0.0 – 0.3) is preferable to crashing the entire game session.
+    The risk classifier is the authoritative output and still fails hard.
+    """
     model = get_lstm_model()
     if model is None:
-        raise RuntimeError(
-            "LSTM model failed to load from HuggingFace!\n"
-            "Repository: vlakvindu/Dementia_LSTM_Model\n"
-            "Please verify:\n"
-            "1. Internet connection is available\n"
-            "2. HuggingFace repository is public\n"
-            "3. hf_hub_download can access the repository"
+        logger.warning(
+            "LSTM model not loaded (HuggingFace may be unreachable). "
+            "Falling back to DummyLSTM — LSTM decline score will be approximate."
         )
+        return DummyLSTM()
     return model
 
 def get_risk_classifier_safe():
-    """Get risk classifier (from HuggingFace only)"""
+    """Get risk classifier — raises RuntimeError if model failed to load.
+
+    Unlike the LSTM, the risk classifier is the *primary* output shown to the
+    caregiver.  Returning a dummy / random prediction here would be medically
+    misleading, so we intentionally fail with a clear 503 message instead.
+    """
     model = get_risk_classifier()
     if model is None:
         raise RuntimeError(
-            "Risk classifier failed to load from HuggingFace!\n"
-            "Repository: vlakvindu/Dementia_Risk_Clasification_model\n"
-            "Please verify:\n"
-            "1. Internet connection is available\n"
-            "2. HuggingFace repository is public\n"
-            "3. hf_hub_download can access the repository"
+            "Risk classifier failed to load from HuggingFace (vlakvindu/Dementia_Risk_Clasification_model). "
+            "Check your internet connection and try again. "
+            "If the problem persists, verify the repository is public and hf_hub_download works."
         )
     return model

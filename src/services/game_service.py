@@ -7,6 +7,7 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Optional
 import numpy as np
+from fastapi import HTTPException
 
 from src.features.game.cognitive_scoring import (
     compute_session_features,
@@ -144,38 +145,56 @@ def predict_lstm_decline(sessions: List[Dict]) -> float:
 def extract_risk_features(sessions: List[Dict], current_features: Dict, lstm_score: float) -> np.ndarray:
     """
     Build feature vector for risk classifier.
-    Extracts 14 features to match the trained model:
+    Extracts 19 features to match the trained model:
+    
+    CORE METRICS (8):
     1-2: mean_sac, slope_sac
     3-4: mean_ies, slope_ies  
     5: mean_accuracy
     6: mean_rt
     7: mean_variability
     8: lstm_decline_score
+    
+    CURRENT SESSION (2):
     9-10: current_sac, current_ies
-    11-12: slope_accuracy, slope_rt (NEW)
-    13-14: std_sac, std_ies (NEW)
+    
+    DERIVED TRENDS (4):
+    11-12: slope_accuracy, slope_rt
+    13-14: std_sac, std_ies
+    
+    ADDITIONAL STATISTICS (5) [TO MATCH MODEL'S 19 FEATURES]:
+    15: std_accuracy (accuracy variability over time)
+    16: std_rt (reaction time variability)
+    17: max_accuracy (best performance)
+    18: current_variability
+    19: accuracy_decline_rate (how fast accuracy is declining)
     """
     
     logger.info(f"🔍 EXTRACTING FEATURES - Accuracy: {current_features.get('accuracy', 0):.1%}, SAC: {current_features.get('sac', 0):.4f}, IES: {current_features.get('ies', 0):.4f}")
     
     if not sessions:
         features = [
-            current_features["sac"],
-            0.0,
-            current_features["ies"],
-            0.0,
-            current_features["accuracy"],
-            current_features["rtAdjMedian"],
-            current_features["variability"],
-            lstm_score,
-            current_features["sac"],
-            current_features["ies"],
-            0.0,  # slope_accuracy
-            0.0,  # slope_rt
-            0.0,  # std_sac
-            0.0   # std_ies
+            current_features["sac"],           # 1: mean_sac
+            0.0,                               # 2: slope_sac
+            current_features["ies"],           # 3: mean_ies
+            0.0,                               # 4: slope_ies
+            current_features["accuracy"],      # 5: mean_accuracy
+            current_features["rtAdjMedian"],   # 6: mean_rt
+            current_features["variability"],   # 7: mean_variability
+            lstm_score,                        # 8: lstm_decline_score
+            current_features["sac"],           # 9: current_sac
+            current_features["ies"],           # 10: current_ies
+            0.0,                               # 11: slope_accuracy
+            0.0,                               # 12: slope_rt
+            0.0,                               # 13: std_sac
+            0.0,                               # 14: std_ies
+            0.0,                               # 15: std_accuracy (NEW)
+            0.0,                               # 16: std_rt (NEW)
+            current_features["accuracy"],      # 17: max_accuracy (NEW)
+            current_features["variability"],   # 18: current_variability (NEW)
+            0.0                                # 19: accuracy_decline_rate (NEW)
         ]
-        logger.info(f"📊 FEATURES (first session): {features}")
+        logger.info(f"📊 FEATURES (first session): {len(features)} features")
         return np.array([features])
     
     sac_values = [s["features"]["sac"] for s in sessions]
@@ -192,6 +211,10 @@ def extract_risk_features(sessions: List[Dict], current_features: Dict, lstm_sco
     
     std_sac = np.std(sac_values) if len(sac_values) > 1 else 0.0
     std_ies = np.std(ies_values) if len(ies_values) > 1 else 0.0
+    std_acc = np.std(acc_values) if len(acc_values) > 1 else 0.0
+    std_rt = np.std(rt_values) if len(rt_values) > 1 else 0.0
+    
+    max_acc = np.max(acc_values) if acc_values else current_features["accuracy"]
     
     def compute_slope(values):
         if len(values) < 2:
@@ -205,17 +228,23 @@ def extract_risk_features(sessions: List[Dict], current_features: Dict, lstm_sco
     slope_acc = compute_slope(acc_values)
     slope_rt = compute_slope(rt_values)
     
+    # Compute accuracy decline rate (how fast accuracy is dropping)
+    accuracy_decline_rate = abs(slope_acc)  # absolute value of negative slope
+    
     features = [
-        mean_sac, slope_sac, mean_ies, slope_ies,
-        mean_acc, mean_rt, mean_var, lstm_score,
-        current_features["sac"], current_features["ies"],
-        slope_acc, slope_rt, std_sac, std_ies
+        mean_sac, slope_sac, mean_ies, slope_ies,              # 1-4
+        mean_acc, mean_rt, mean_var, lstm_score,               # 5-8
+        current_features["sac"], current_features["ies"],      # 9-10
+        slope_acc, slope_rt, std_sac, std_ies,                 # 11-14
+        std_acc, std_rt, max_acc,                              # 15-17 (NEW)
+        current_features["variability"],                        # 18 (NEW)
+        accuracy_decline_rate                                   # 19 (NEW)
     ]
     
-    logger.info(f"📊 EXTRACTED FEATURES:")
+    logger.info(f"📊 EXTRACTED FEATURES (19 total):")
     logger.info(f"   mean_acc={mean_acc:.3f}, mean_sac={mean_sac:.4f}, mean_ies={mean_ies:.1f}")
     logger.info(f"   current_acc={current_features.get('accuracy', 0):.3f}, sac={current_features['sac']:.4f}, ies={current_features['ies']:.1f}")
-    logger.info(f"   All 14 features: {features}")
+    logger.info(f"   std_acc={std_acc:.3f}, std_rt={std_rt:.1f}, max_acc={max_acc:.3f}, decline_rate={accuracy_decline_rate:.3f}")
     
     return np.array([features])
 
@@ -248,12 +277,20 @@ def predict_risk(sessions: List[Dict], current_features: Dict, lstm_score: float
                 f"rt={current_features.get('rtAdjMedian', 0):.0f}ms")
     
     if scaler is not None:
-        X_raw = X.copy()
-        X = scaler.transform(X)
-        # Clip scaled features to ±5 sigma to prevent out-of-distribution inputs from
-        # overwhelming the logistic regression (e.g. extreme slope values from short history)
-        X = np.clip(X, -5.0, 5.0)
-        logger.info(f"✓ Features scaled+clipped (raw[0]={X_raw[0,0]:.4f} -> scaled[0]={X[0,0]:.4f})")
+        # Check if feature count matches scaler expectation
+        expected_n = getattr(scaler, 'n_features_in_', X.shape[-1])
+        if X.shape[-1] != expected_n:
+            logger.warning(
+                f"⚠️ FEATURE MISMATCH: Scaler expects {expected_n} features but got {X.shape[-1]} "
+                f"— skipping scaling and using raw features instead"
+            )
+        else:
+            X_raw = X.copy()
+            X = scaler.transform(X)
+            # Clip scaled features to ±5 sigma to prevent out-of-distribution inputs from
+            # overwhelming the logistic regression (e.g. extreme slope values from short history)
+            X = np.clip(X, -5.0, 5.0)
+            logger.info(f"✓ Features scaled+clipped (raw[0]={X_raw[0,0]:.4f} -> scaled[0]={X[0,0]:.4f})")
     else:
         logger.warning("⚠️ No scaler available - using raw features")
     
@@ -273,14 +310,54 @@ def predict_risk(sessions: List[Dict], current_features: Dict, lstm_score: float
             "MEDIUM": round(float(probs[2]), 4)
         }
         
-        predicted_class = int(np.argmax(probs))
-        risk_level = RISK_LABELS[predicted_class]  # Will be HIGH, LOW, or MEDIUM
+        # ═══════════════════════════════════════════════════════════════════════════════
+        # FIX MODEL BIAS: Apply threshold-based decision instead of pure argmax
+        # The model tends to predict HIGH for unfamiliar patterns (including good performance)
+        # So we use a higher threshold (65%) to only confidently predict HIGH
+        # ═══════════════════════════════════════════════════════════════════════════════
+        prob_high = float(probs[0])
+        prob_low = float(probs[1])
+        prob_medium = float(probs[2])
+        
+        # Use threshold-based prediction instead of argmax
+        HIGH_THRESHOLD = 0.65  # Only predict HIGH if >65% confidence
+        
+        if prob_high > HIGH_THRESHOLD:
+            risk_level = "HIGH"
+        elif prob_low > prob_medium:
+            risk_level = "LOW"
+        else:
+            risk_level = "MEDIUM"
+        
+        logger.info(f"🔧 BIAS CORRECTION: Using threshold=0.65 for HIGH detection")
+        logger.info(f"   Raw argmax: {RISK_LABELS[int(np.argmax(probs))]} | Threshold-based: {risk_level}")
 
-        # ── Rule-based safety floor ──────────────────────────────────────────
-        # Catch blatant poor performance the trained model may underestimate.
+        # ── Performance ceiling (good metrics = max MEDIUM risk) ──────────────────────
+        # Even if model predicts HIGH, good performance should be capped
         acc   = current_features.get("accuracy", 1.0)
         ies   = current_features.get("ies", 0.0)
         var   = current_features.get("variability", 0.0)
+        sac   = current_features.get("sac", 0.0)
+        
+        # If performance is GOOD → cap risk to MEDIUM
+        # GOOD = high accuracy + good efficiency
+        if acc >= 0.80 and ies < 2.0 and sac > 0.3:
+            if risk_level == "HIGH":
+                logger.warning(
+                    f"Performance ceiling (good): acc={acc:.2%}, sac={sac:.4f}, ies={ies:.4f} → HIGH → MEDIUM"
+                )
+                risk_level = "MEDIUM"
+        # If performance is EXCELLENT → max LOW
+        # EXCELLENT = very high accuracy + excellent efficiency
+        elif acc >= 0.95 and ies < 1.5 and sac > 0.6:
+            if risk_level in ("HIGH", "MEDIUM"):
+                logger.warning(
+                    f"Excellent performance: acc={acc:.2%}, sac={sac:.4f}, ies={ies:.4f} → {risk_level} → LOW"
+                )
+                risk_level = "LOW"
+        
+        # ── Rule-based safety floor (poor metrics = minimum HIGH/MEDIUM) ──────────────
+        # Catch blatant poor performance the trained model may underestimate.
         # If accuracy < 40 % or IES > 5 or variability > 0.7 → minimum HIGH
         if acc < 0.35 or ies > 8.0 or (acc < 0.40 and var > 0.60):
             if risk_level in ("LOW", "MEDIUM"):
@@ -295,7 +372,8 @@ def predict_risk(sessions: List[Dict], current_features: Dict, lstm_score: float
                     f"Rule override: acc={acc:.2f}, var={var:.2f} → LOW → MEDIUM"
                 )
                 risk_level = "MEDIUM"
-        # ─────────────────────────────────────────────────────────────────────
+        # ─────────────────────────────────────────────────────────────────────────────
+        
         # Weighted risk score: MEDIUM contributes 50pts, HIGH contributes 100pts
         risk_score_0_100 = round((float(probs[0]) * 100 + float(probs[2]) * 50), 2)
 
@@ -306,8 +384,10 @@ def predict_risk(sessions: List[Dict], current_features: Dict, lstm_score: float
             risk_score_0_100 = max(risk_score_0_100, 70.0)
         elif risk_level == "MEDIUM":
             risk_score_0_100 = max(risk_score_0_100, 35.0)
+        else:  # LOW
+            risk_score_0_100 = min(risk_score_0_100, 30.0)  # Cap LOW at 30
         
-        logger.info(f"✅ FINAL PREDICTION: {risk_level} | HIGH={probs[0]:.3f}, LOW={probs[1]:.3f}, MED={probs[2]:.3f} | Score: {risk_score_0_100}/100")
+        logger.info(f"✅ FINAL PREDICTION: {risk_level} | HIGH={prob_high:.3f}, LOW={prob_low:.3f}, MED={prob_medium:.3f} | Score: {risk_score_0_100}/100")
         
         return {
             "riskProbability": risk_probability,
@@ -316,10 +396,22 @@ def predict_risk(sessions: List[Dict], current_features: Dict, lstm_score: float
             "lstmDeclineScore": round(lstm_score, 4)
         }
         
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        # Model not available — surface as 503 so the mobile app shows a helpful message
+        logger.error(f"❌ Risk model unavailable: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="Risk assessment model is not available right now. "
+                   "Please ensure the server has internet access to download the model, then try again."
+        )
     except Exception as e:
         logger.error(f"❌ Risk prediction FAILED with exception: {e}", exc_info=True)
-        # DO NOT return fallback - raise the error so we know something is wrong
-        raise RuntimeError(f"Risk prediction failed: {e}") from e
+        raise HTTPException(
+            status_code=500,
+            detail=f"Risk prediction failed: {e}"
+        )
 
 # ============================================================================
 # Main Pipeline Function (ASYNC)
