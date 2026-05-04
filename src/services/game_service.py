@@ -349,7 +349,7 @@ def predict_risk(sessions: List[Dict], current_features: Dict, lstm_score: float
                 risk_level = "MEDIUM"
         # If performance is EXCELLENT → max LOW
         # EXCELLENT = very high accuracy + excellent efficiency
-        elif acc >= 0.95 and ies < 1.5 and sac > 0.6:
+        if acc >= 0.95 and ies < 1.5 and sac > 0.6:
             if risk_level in ("HIGH", "MEDIUM"):
                 logger.warning(
                     f"Excellent performance: acc={acc:.2%}, sac={sac:.4f}, ies={ies:.4f} → {risk_level} → LOW"
