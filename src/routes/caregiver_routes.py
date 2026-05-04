@@ -1931,6 +1931,46 @@ async def get_caregiver_alerts(
         raise HTTPException(status_code=500, detail="Failed to retrieve caregiver alerts")
 
 
+@router.get("/my-alerts", response_model=dict)
+async def get_my_all_alerts(
+    days: int = Query(3, description="Number of days to look back"),
+    resolved: Optional[bool] = Query(False, description="Filter resolved status"),
+    current_caregiver = Depends(get_current_caregiver)
+):
+    """
+    Get alerts across ALL linked patients for the logged-in caregiver.
+    Used by the navbar notification bell.
+    """
+    try:
+        caregiver_id = current_caregiver["caregiver_id"]
+        alerts_collection = Database.get_collection("caregiver_alerts")
+
+        query = {"caregiver_ids": caregiver_id}
+        if days:
+            cutoff = datetime.now() - timedelta(days=days)
+            query["created_at"] = {"$gte": cutoff}
+        if resolved is not None:
+            query["resolved"] = resolved
+
+        cursor = alerts_collection.find(query).sort("created_at", -1).limit(30)
+        alerts = []
+        async for alert in cursor:
+            alert["_id"] = str(alert["_id"])
+            if "created_at" in alert and hasattr(alert["created_at"], "isoformat"):
+                alert["created_at"] = alert["created_at"].isoformat()
+            alerts.append(alert)
+
+        return {
+            "success": True,
+            "total_alerts": len(alerts),
+            "unresolved_alerts": sum(1 for a in alerts if not a.get("resolved", False)),
+            "alerts": alerts
+        }
+    except Exception as e:
+        logger.error(f"Get my alerts error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve alerts")
+
+
 @router.post("/alerts/{alert_id}/resolve", response_model=dict)
 async def resolve_alert(
     alert_id: str,

@@ -393,13 +393,15 @@ async def _save_caregiver_alert(
             return   # nothing to notify
 
         type_labels = {
-            "missed_medication":    f"Missed medication: {reminder_title}",
-            "missed_reminder":      f"Missed reminder: {reminder_title}",
-            "snoozed_reminder":     f"Reminder snoozed: {reminder_title}",
-            "new_high_priority":    f"New {priority} priority reminder: {reminder_title}",
+            "missed_medication":         f"Missed medication: {reminder_title}",
+            "missed_reminder":           f"Missed reminder: {reminder_title}",
+            "snoozed_reminder":          f"Reminder snoozed: {reminder_title}",
+            "new_high_priority":         f"New {priority} priority reminder: {reminder_title}",
+            "medication_reminder_created": f"Medication reminder set: {reminder_title}",
+            "medication_confirmed":       f"Medication taken: {reminder_title}",
         }
         type_messages = {
-            "missed_medication":  (
+            "missed_medication": (
                 f"{reminder_category.capitalize()} reminder '{reminder_title}' was MISSED"
                 + (f" (scheduled {scheduled_time.strftime('%H:%M')})" if scheduled_time else "") + "."
             ),
@@ -414,6 +416,14 @@ async def _save_caregiver_alert(
             "new_high_priority": (
                 f"A {priority}-priority {reminder_category} reminder '{reminder_title}' was created"
                 + (f" for {scheduled_time.strftime('%H:%M')}." if scheduled_time else ".")
+            ),
+            "medication_reminder_created": (
+                f"A medication reminder '{reminder_title}' has been scheduled"
+                + (f" for {scheduled_time.strftime('%H:%M')}." if scheduled_time else ".")
+            ),
+            "medication_confirmed": (
+                f"Patient confirmed taking medication: '{reminder_title}'"
+                + (f" (scheduled {scheduled_time.strftime('%H:%M')})" if scheduled_time else "") + "."
             ),
         }
 
@@ -469,17 +479,18 @@ async def create_reminder(reminder: Reminder):
         
         logger.info(f"Created reminder {reminder.id} for user {reminder.user_id}")
 
-        # ── Auto-alert caregivers for high/critical medication reminders ─────
-        if (
-            reminder.caregiver_ids
-            and reminder.category == "medication"
-            and reminder.priority in (ReminderPriority.HIGH, ReminderPriority.CRITICAL)
-        ):
+        # ── Alert caregivers for ALL medication reminders when notify_caregiver_on_miss is set ─────
+        if reminder.caregiver_ids and reminder.category == "medication" and reminder.notify_caregiver_on_miss:
+            alert_type = (
+                "new_high_priority"
+                if reminder.priority in (ReminderPriority.HIGH, ReminderPriority.CRITICAL)
+                else "medication_reminder_created"
+            )
             await _save_caregiver_alert(
                 patient_id=reminder.user_id,
                 caregiver_ids=reminder.caregiver_ids,
-                alert_type="new_high_priority",
-                priority=reminder.priority.value,
+                alert_type=alert_type,
+                priority=reminder.priority.value if hasattr(reminder.priority, "value") else reminder.priority,
                 reminder_id=reminder.id,
                 reminder_title=reminder.title,
                 reminder_category=reminder.category,
@@ -2099,6 +2110,28 @@ async def acknowledge_reminder_alarm(
         except Exception as be:
             logger.warning(f"Behavioral logging failed: {be}")
         
+        # ── Alert caregivers when patient confirms a medication reminder ────
+        if reminder_data.get("category") == "medication":
+            caregiver_ids = reminder_data.get("caregiver_ids", [])
+            if caregiver_ids:
+                sched_raw = reminder_data.get("scheduled_time")
+                sched_dt = None
+                if sched_raw:
+                    try:
+                        sched_dt = datetime.fromisoformat(str(sched_raw).replace("+00:00", "").replace("Z", ""))
+                    except Exception:
+                        pass
+                await _save_caregiver_alert(
+                    patient_id=user_id,
+                    caregiver_ids=caregiver_ids,
+                    alert_type="medication_confirmed",
+                    priority=reminder_data.get("priority", "medium"),
+                    reminder_id=reminder_id,
+                    reminder_title=reminder_data.get("title", "Medication"),
+                    reminder_category="medication",
+                    scheduled_time=sched_dt,
+                )
+
         return {
             "status": "success",
             "message": "Alarm acknowledged - stopped successfully",
@@ -2108,7 +2141,7 @@ async def acknowledge_reminder_alarm(
             "repeat_count": repeat_count,
             "timestamp": now.isoformat()
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
