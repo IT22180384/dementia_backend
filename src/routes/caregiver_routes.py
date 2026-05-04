@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/caregiver", tags=["caregiver"])
 
 # Initialize services
-behavior_tracker = BehaviorTracker()
+behavior_tracker = BehaviorTracker(db_service=ReminderDatabaseService())
 reminder_analyzer = PittBasedReminderAnalyzer()
 report_generator = WeeklyReportGenerator(behavior_tracker)
 

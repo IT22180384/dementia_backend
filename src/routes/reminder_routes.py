@@ -468,15 +468,22 @@ async def create_reminder(reminder: Reminder):
         # Auto-generate ID if not provided
         if not reminder.id:
             reminder.id = f"reminder_{uuid.uuid4().hex[:12]}"
-        
+
         # Set creation timestamps
         reminder.created_at = datetime.now()
         reminder.updated_at = datetime.now()
-        
+
+        # ── Auto-populate caregiver_ids from user profile if not supplied ──
+        if not reminder.caregiver_ids:
+            users_col = Database.get_collection("users")
+            user_doc = await users_col.find_one({"user_id": reminder.user_id}, {"caregiver_id": 1})
+            if user_doc and user_doc.get("caregiver_id"):
+                reminder.caregiver_ids = [user_doc["caregiver_id"]]
+
         # Save to MongoDB database
         db_service = get_db_service()
         db_result = await db_service.create_reminder(reminder)
-        
+
         logger.info(f"Created reminder {reminder.id} for user {reminder.user_id}")
 
         # ── Alert caregivers for ALL medication reminders when notify_caregiver_on_miss is set ─────
